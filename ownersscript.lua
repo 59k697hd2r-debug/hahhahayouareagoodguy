@@ -1,6 +1,6 @@
 -- ============================================
 -- KHOLS ADMIN – OWNER VERSION
--- Full features + Owner tab + Whitelist + Silent + Updated .clr
+-- Full features + Owner tab + Whitelist + Silent
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -39,7 +39,9 @@ local whitelist = {}
 
 local function isWhitelisted(username)
    for _, name in ipairs(whitelist) do
-      if name:lower() == username:lower() then return true end
+      if name:lower() == username:lower() then
+         return true
+      end
    end
    return false
 end
@@ -66,9 +68,13 @@ end
 OwnerTab:CreateButton({
    Name = "Show Whitelist",
    Callback = function()
-      if #whitelist == 0 then print("[Whitelist] Empty.") else
+      if #whitelist == 0 then
+         print("[Whitelist] Empty.")
+      else
          print("[Whitelist] Whitelisted:")
-         for _, name in ipairs(whitelist) do print(" - " .. name) end
+         for _, name in ipairs(whitelist) do
+            print(" - " .. name)
+         end
       end
    end
 })
@@ -132,7 +138,11 @@ local jailAllCooldownTime = 1.0
 
 -- ===== Helper: send message respecting silent mode =====
 local function sendMessage(msg, channel)
-   if silentMode then channel = "System" else channel = channel or "All" end
+   if silentMode then
+      channel = "System"
+   else
+      channel = channel or "All"
+   end
    ChatEvent:FireServer(msg, channel)
    print("[Chat] (" .. channel .. ") " .. msg)
 end
@@ -140,7 +150,9 @@ end
 -- ===== Helper: find player =====
 local function findPlayer(username)
    for _, plr in ipairs(Players:GetPlayers()) do
-      if plr.Name:lower() == username:lower() then return plr end
+      if plr.Name:lower() == username:lower() then
+         return plr
+      end
    end
    return nil
 end
@@ -170,17 +182,26 @@ task.spawn(function()
    while true do
       task.wait(0.2)
       if deathRecently then
-         if tick() - lastDeathSelfTime > 1.0 then deathRecently = false else continue end
+         if tick() - lastDeathSelfTime > 1.0 then
+            deathRecently = false
+         else
+            continue
+         end
       end
       local found = false
       for _, obj in ipairs(workspace:GetChildren()) do
-         if obj:IsA("Model") and obj.Name == MY_MODEL_NAME then found = true break end
+         if obj:IsA("Model") and obj.Name == MY_MODEL_NAME then
+            found = true
+            break
+         end
       end
       if found then
-         modelExists = true; punishSent = false
+         modelExists = true
+         punishSent = false
       else
          if modelExists and not punishSent then
-            modelExists = false; punishSent = true
+            modelExists = false
+            punishSent = true
             if antiPunishSelfEnabled then
                local now = tick()
                if now - lastPunishSelfTime >= punishSelfCooldown then
@@ -211,7 +232,9 @@ local function attachDeathWatcher(char)
    if not humanoid then return end
    humanoid.Died:Connect(sendSelfAntiDeath)
    humanoid:GetPropertyChangedSignal("Health"):Connect(function()
-      if humanoid.Health <= 0 then sendSelfAntiDeath() end
+      if humanoid.Health <= 0 then
+         sendSelfAntiDeath()
+      end
    end)
 end
 
@@ -221,12 +244,17 @@ local function onCharacterAdded(char)
 end
 
 local currentChar = LocalPlayer.Character
-if currentChar then onCharacterAdded(currentChar) end
+if currentChar then
+   onCharacterAdded(currentChar)
+end
 LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
 
--- ===== Commands with whitelist and silent =====
+-- ===== Commands with whitelist =====
 local function SetAFK(target)
-   if isWhitelisted(target) then print("[Whitelist] " .. target .. " blocked.") return end
+   if isWhitelisted(target) then
+      print("[Whitelist] " .. target .. " blocked.")
+      return
+   end
    if not afkEnabled or afkRunning then return end
    afkRunning = true
    sendMessage("freeze " .. target, "System")
@@ -249,8 +277,14 @@ local function KickPlayer(target)
    if isWhitelisted(target) then return end
    if not kickEnabled or afkRunning then return end
    afkRunning = true
-   for i = 1, 3 do sendMessage("gear me potato", "System") task.wait(0.05) end
-   for i = 1, 4 do sendMessage("give me potato", "System") task.wait(0.05) end
+   for i = 1, 3 do
+      sendMessage("gear me potato", "System")
+      task.wait(0.05)
+   end
+   for i = 1, 4 do
+      sendMessage("give me potato", "System")
+      task.wait(0.05)
+   end
    sendMessage("bring " .. target, "System")
    task.wait(0.05)
    sendMessage("freeze " .. target, "System")
@@ -259,7 +293,7 @@ local function KickPlayer(target)
    afkRunning = false
 end
 
--- ===== .clr – batch 5000, HotPotato + SubspaceTripmine =====
+-- ===== .clr – batch 5000, all Tools, HotPotato, SubspaceTripmine, Part, Truss, Seat, Model =====
 local function getSyncAPI()
    local char = LocalPlayer.Character
    if char then
@@ -277,7 +311,10 @@ local function getSyncAPI()
       local bt = bp:FindFirstChild("Building Tools")
       if bt then
          local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-         if humanoid then humanoid:EquipTool(bt) task.wait(0.1) end
+         if humanoid then
+            humanoid:EquipTool(bt)
+            task.wait(0.1)
+         end
          local sync = bt:FindFirstChild("SyncAPI")
          if sync then
             local ep = sync:FindFirstChild("ServerEndpoint")
@@ -302,7 +339,7 @@ local function removeByName(names)
 
    local instances = {}
    for _, v in pairs(workspace:GetDescendants()) do
-      -- BaseParts
+      -- BaseParts with specific names
       if v:IsA("BasePart") then
          for _, name in ipairs(names) do
             if v.Name:lower() == name:lower() then
@@ -311,8 +348,8 @@ local function removeByName(names)
             end
          end
       end
-      -- Tools named "HotPotato"
-      if v:IsA("Tool") and v.Name == "HotPotato" then
+      -- All Tools (any name)
+      if v:IsA("Tool") then
          table.insert(instances, v)
       end
       -- Models named "Model"
@@ -339,12 +376,17 @@ local function removeByName(names)
       local success = pcall(function()
          endpoint:InvokeServer("Remove", batch)
       end)
-      if success then total = total + #batch end
+      if success then
+         total = total + #batch
+      end
       task.wait(0.01)
    end
 
-   if clrStop then print("[.clr] Halted. Removed " .. total .. " so far.")
-   else print("[.clr] Removed " .. total .. " instances.") end
+   if clrStop then
+      print("[.clr] Halted. Removed " .. total .. " so far.")
+   else
+      print("[.clr] Removed " .. total .. " instances.")
+   end
 end
 
 -- ===== Auto Time Fix =====
@@ -361,7 +403,9 @@ task.spawn(function()
             if isNight and not lastTimeFixSent then
                sendMessage("time 12", "System")
                lastTimeFixSent = true
-            elseif not isNight then lastTimeFixSent = false end
+            elseif not isNight then
+               lastTimeFixSent = false
+            end
          end
       else
          lastTimeFixSent = false
@@ -374,7 +418,9 @@ task.spawn(function()
    while true do
       task.wait(1.5)
       for _, username in ipairs(banMonitored) do
-         if isWhitelisted(username) then continue end
+         if isWhitelisted(username) then
+            continue
+         end
          local plr = findPlayer(username)
          local present = plr and plr.Character and plr.Character.Parent == workspace
          if present then
@@ -405,8 +451,16 @@ task.spawn(function()
    while true do
       task.wait(0.05)
       -- Clean up lists
-      for i = #crashMonitored, 1, -1 do if not findPlayer(crashMonitored[i]) then table.remove(crashMonitored, i) end end
-      for i = #deathMonitored, 1, -1 do if not findPlayer(deathMonitored[i]) then table.remove(deathMonitored, i) end end
+      for i = #crashMonitored, 1, -1 do
+         if not findPlayer(crashMonitored[i]) then
+            table.remove(crashMonitored, i)
+         end
+      end
+      for i = #deathMonitored, 1, -1 do
+         if not findPlayer(deathMonitored[i]) then
+            table.remove(deathMonitored, i)
+         end
+      end
       for i = #punishMonitored, 1, -1 do
          if not findPlayer(punishMonitored[i]) then
             local removed = punishMonitored[i]
@@ -419,7 +473,11 @@ task.spawn(function()
             end
          end
       end
-      for i = #jailMonitored, 1, -1 do if not findPlayer(jailMonitored[i]) then table.remove(jailMonitored, i) end end
+      for i = #jailMonitored, 1, -1 do
+         if not findPlayer(jailMonitored[i]) then
+            table.remove(jailMonitored, i)
+         end
+      end
 
       -- Crash
       for _, storedName in ipairs(crashMonitored) do
@@ -534,13 +592,24 @@ local function addToMonitor(list, username)
       for _, plr in ipairs(Players:GetPlayers()) do
          if plr ~= LocalPlayer then
             local found = false
-            for _, name in ipairs(list) do if name:lower() == plr.Name:lower() then found = true break end end
-            if not found then table.insert(list, plr.Name) end
+            for _, name in ipairs(list) do
+               if name:lower() == plr.Name:lower() then
+                  found = true
+                  break
+               end
+            end
+            if not found then
+               table.insert(list, plr.Name)
+            end
          end
       end
       return true
    end
-   for _, name in ipairs(list) do if name:lower() == username:lower() then return false end end
+   for _, name in ipairs(list) do
+      if name:lower() == username:lower() then
+         return false
+      end
+   end
    table.insert(list, username)
    return true
 end
@@ -577,7 +646,11 @@ local function addToAllMonitors(username)
    local b = addToMonitor(deathMonitored, username)
    local c = addToMonitor(punishMonitored, username)
    local d = addToMonitor(jailMonitored, username)
-   if a or b or c or d then print("[AntiAll] Now monitoring " .. username .. " for all.") else print("[AntiAll] Already monitored.") end
+   if a or b or c or d then
+      print("[AntiAll] Now monitoring " .. username .. " for all.")
+   else
+      print("[AntiAll] Already monitored.")
+   end
 end
 
 local function removeFromAllMonitors(username)
@@ -585,7 +658,11 @@ local function removeFromAllMonitors(username)
    local b = removeFromMonitor(deathMonitored, username)
    local c = removeFromMonitor(punishMonitored, username)
    local d = removeFromMonitor(jailMonitored, username)
-   if a or b or c or d then print("[AntiAll] Stopped monitoring all for " .. username) else print("[AntiAll] Not monitored.") end
+   if a or b or c or d then
+      print("[AntiAll] Stopped monitoring all for " .. username)
+   else
+      print("[AntiAll] Not monitored.")
+   end
 end
 
 local function addJailMonitor(username) return addToMonitor(jailMonitored, username) end
@@ -603,7 +680,9 @@ end
 
 local function removeBanMonitor(username)
    local removed = removeFromMonitor(banMonitored, username)
-   if removed then banWasAbsent[username] = nil
+   if removed then
+      banWasAbsent[username] = nil
+   end
    return removed
 end
 
@@ -645,7 +724,7 @@ MiscTab:CreateButton({
       task.wait(0.1)
       notify(".kick", ".kick loaded")
       task.wait(0.1)
-      notify(".clr", ".clr updated (5000 batch, HotPotato+SubspaceTripmine)")
+      notify(".clr", ".clr updated (5000 batch, all Tools)")
       task.wait(0.1)
       notify("Anti-Crash", "Anti-Crash active")
       task.wait(0.1)
@@ -660,7 +739,9 @@ MiscTab:CreateButton({
       notify("Monitor Commands", "Use 'all' to monitor everyone")
       task.wait(0.1)
       notify("Killbrick Immunity", "Active")
-      if silentMode then notify("Silent Mode", "Commands are hidden from chat") end
+      if silentMode then
+         notify("Silent Mode", "Commands are hidden from chat")
+      end
    end
 })
 
@@ -671,7 +752,7 @@ MiscTab:CreateButton({
       print(".afk <user> – freeze, god, ff")
       print(".unafk <user> – reset")
       print(".kick <user> – gear me potato (3x), give me potato (4x), bring, freeze, size nan")
-      print(".clr – delete Part, Truss, Seat, SubspaceTripmine, HotPotato, and models named 'Model' (5000 batch)")
+      print(".clr – delete all Tools, Part, Truss, Seat, SubspaceTripmine, and models named 'Model' (5000 batch)")
       print(".stopclr – stop ongoing .clr")
       print(".anticrash <user> – monitor anchored (use 'all' for everyone)")
       print(".unanticrash <user> – stop monitoring")
@@ -714,7 +795,9 @@ local function revertOriginalProperties(part)
    part.CanTouch = data.CanTouch
    part.Material = data.Material
    for mover, wasEnabled in pairs(data.BodyMovers) do
-      if mover and mover.Parent then mover.Enabled = wasEnabled end
+      if mover and mover.Parent then
+         mover.Enabled = wasEnabled
+      end
    end
    originalProps[part] = nil
 end
@@ -732,7 +815,9 @@ local function applyKillbrickImmunity()
          storeOriginalProperties(part)
          part.CanTouch = false
          for _, child in ipairs(part:GetChildren()) do
-            if child:IsA("TouchInterest") then child:Destroy() end
+            if child:IsA("TouchInterest") then
+               child:Destroy()
+            end
          end
          part.Material = Enum.Material.Plastic
          for _, child in ipairs(part:GetChildren()) do
@@ -746,7 +831,9 @@ local function applyKillbrickImmunity()
 end
 
 local function revertKillbrickImmunity()
-   for part in pairs(originalProps) do revertOriginalProperties(part) end
+   for part in pairs(originalProps) do
+      revertOriginalProperties(part)
+   end
    originalProps = {}
 end
 
@@ -756,48 +843,69 @@ MiscTab:CreateToggle({
    Flag = "KillbrickImmunity",
    Callback = function(v)
       killbrickEnabled = v
-      if v then applyKillbrickImmunity() else revertKillbrickImmunity() end
+      if v then
+         applyKillbrickImmunity()
+      else
+         revertKillbrickImmunity()
+      end
    end
 })
 applyKillbrickImmunity()
 task.spawn(function()
    while true do
       task.wait(5)
-      if killbrickEnabled then applyKillbrickImmunity() end
+      if killbrickEnabled then
+         applyKillbrickImmunity()
+      end
    end
 end)
 
 -- ===== UI =====
 local afkToggle = CommandsTab:CreateToggle({
-   Name = "AFK Commands (.afk / .unafk)", CurrentValue = true, Flag = "AFK_Enabled",
+   Name = "AFK Commands (.afk / .unafk)",
+   CurrentValue = true,
+   Flag = "AFK_Enabled",
    Callback = function(v) afkEnabled = v end
 })
 
 local kickToggle = CommandsTab:CreateToggle({
-   Name = "Kick Command (.kick)", CurrentValue = true, Flag = "Kick_Enabled",
+   Name = "Kick Command (.kick)",
+   CurrentValue = true,
+   Flag = "Kick_Enabled",
    Callback = function(v) kickEnabled = v end
 })
 
 local antiPunishSelfToggle = CommandsTab:CreateToggle({
-   Name = "Self Anti‑Punish (sends 're' on removal)", CurrentValue = true, Flag = "AntiPunishSelf",
+   Name = "Self Anti‑Punish (sends 're' on removal)",
+   CurrentValue = true,
+   Flag = "AntiPunishSelf",
    Callback = function(v)
       antiPunishSelfEnabled = v
-      if not v then punishSent = true modelExists = false end
+      if not v then
+         punishSent = true
+         modelExists = false
+      end
    end
 })
 
 local antiDeathSelfToggle = CommandsTab:CreateToggle({
-   Name = "Self Anti‑Death (sends 're' on death)", CurrentValue = true, Flag = "AntiDeathSelf",
+   Name = "Self Anti‑Death (sends 're' on death)",
+   CurrentValue = true,
+   Flag = "AntiDeathSelf",
    Callback = function(v) antiDeathSelfEnabled = v end
 })
 
 local antiCrashSelfToggle = CommandsTab:CreateToggle({
-   Name = "Self Anti‑Crash (thaw me when anchored)", CurrentValue = true, Flag = "AntiCrashSelf",
+   Name = "Self Anti‑Crash (thaw me when anchored)",
+   CurrentValue = true,
+   Flag = "AntiCrashSelf",
    Callback = function(v) antiCrashSelfEnabled = v end
 })
 
 local clrToggle = CommandsTab:CreateToggle({
-   Name = "Clear Parts (.clr)", CurrentValue = true, Flag = "ClearParts",
+   Name = "Clear Parts (.clr)",
+   CurrentValue = true,
+   Flag = "ClearParts",
    Callback = function(v) clrEnabled = v end
 })
 
@@ -805,7 +913,7 @@ CommandsTab:CreateButton({ Name = "Hide GUI", Callback = function() Rayfield:Set
 CommandsTab:CreateButton({ Name = "Show GUI", Callback = function() Rayfield:SetVisibility(true) end })
 CommandsTab:CreateButton({ Name = "Destroy GUI", Callback = function() Rayfield:Destroy() end })
 
--- ===== Chat hooks (includes silent and whitelist) =====
+-- ===== Chat hooks (owner version) =====
 local old
 old = hookmetamethod(game, "__namecall", function(self, ...)
    local args = {...}
@@ -813,17 +921,33 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
       local msg = string.lower(args[1])
       local target
 
-      -- Owner-only whitelist commands
+      -- Owner-only: .whitelist / .unwhitelist
       if string.sub(msg, 1, 10) == ".whitelist " then
          local username = string.sub(args[1], 11)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
-         if username ~= "" then addWhitelist(username) else print("[Whitelist] Please specify a username.") end
-         return silentMode and nil or old(self, ...)
+         if username ~= "" then
+            addWhitelist(username)
+         else
+            print("[Whitelist] Please specify a username.")
+         end
+         if silentMode then
+            return nil
+         else
+            return old(self, ...)
+         end
       elseif string.sub(msg, 1, 12) == ".unwhitelist " then
          local username = string.sub(args[1], 13)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
-         if username ~= "" then removeWhitelist(username) else print("[Whitelist] Please specify a username.") end
-         return silentMode and nil or old(self, ...)
+         if username ~= "" then
+            removeWhitelist(username)
+         else
+            print("[Whitelist] Please specify a username.")
+         end
+         if silentMode then
+            return nil
+         else
+            return old(self, ...)
+         end
       end
 
       -- Self toggles
@@ -874,7 +998,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
          end)
          if silentMode then return nil end
 
-      -- Monitor commands (protective, not blocked by whitelist)
+      -- Monitor commands (protective)
       elseif string.sub(msg, 1, 11) == ".anticrash " then
          local username = string.sub(args[1], 12)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1044,7 +1168,11 @@ end)
 -- ===== Notification =====
 local function notify(title, text)
    pcall(function()
-      StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 4 })
+      StarterGui:SetCore("SendNotification", {
+         Title = title,
+         Text = text,
+         Duration = 4,
+      })
    end)
 end
 
@@ -1054,7 +1182,7 @@ task.spawn(function()
       {"Khols Admin", "Owner version loaded with whitelist & silent!"},
       {".afk", ".afk loaded"},
       {".kick", ".kick loaded"},
-      {".clr", ".clr updated (5000 batch, HotPotato+SubspaceTripmine)"},
+      {".clr", ".clr updated (5000 batch, all Tools)"},
       {"Anti-Crash", "Anti-Crash active"},
       {"Anti-Death", "Anti-Death active"},
       {"Anti-Punish", "Anti-Punish active"},
@@ -1071,6 +1199,6 @@ task.spawn(function()
    end
 end)
 
-print("Khols Admin Owner GUI loaded. .clr batch=5000, HotPotato+SubspaceTripmine added.")
+print("Khols Admin Owner GUI loaded. .clr batch=5000, all Tools deleted.")
 print("Commands: .whitelist <user>, .unwhitelist <user>")
 print("Press K to toggle GUI.")
