@@ -185,6 +185,7 @@ task.spawn(function()
          if tick() - lastDeathSelfTime > 1.0 then
             deathRecently = false
          else
+            -- skip this iteration
             continue
          end
       end
