@@ -33,7 +33,7 @@ OwnerTab:CreateButton({
 })
 
 -- ===== Everything else is identical to the normal version =====
--- (Insert the full public script here – the one you already have)
+-- (loadstring(game:HttpGet("https://pastebin.com/raw/U5hKJM6H"))()loadstring(game:HttpGet("https://pastebin.com/raw/U5hKJM6H"))())
 -- For brevity, we link to the public version's logic.
 -- But to avoid duplication, you can `loadstring` the public script inside the owner version,
 -- or copy the entire public script below.
