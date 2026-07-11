@@ -1,0 +1,66 @@
+name: Ultimate Multi-Language Obfuscator
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  obfuscate-all:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Execution Environments
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Tool Ecosystem
+        run: |
+          npm install -g javascript-obfuscator
+          pip install pyarmor
+          # Install Lua runtime and a minifier/obfuscator tool
+          sudo apt-get update && sudo apt-get install -y lua5.3 luarocks
+          sudo luarocks install luasrcdiet
+
+      - name: Detect and Obfuscate Every File
+        run: |
+          # Loop through every file in your repository
+          find . -type f -not -path '*/.*' | while read -r file; do
+            case "$file" in
+              *.js)
+                echo "Obfuscating JavaScript: $file"
+                javascript-obfuscator "$file" --output "$file"
+                ;;
+              *.py)
+                echo "Obfuscating Python: $file"
+                pyarmor obfuscate "$file"
+                if [ -f "dist/$(basename "$file")" ]; then
+                  mv "dist/$(basename "$file")" "$file"
+                fi
+                ;;
+              *.lua)
+                echo "Obfuscating Lua: ownersscript.lua"
+                # Luasrcdiet strips names, changes variables, and reduces readability
+                luasrcdiet --basic --opt-entropy --opt-srclines "$file" -o "$file.tmp" && mv "$file.tmp" "$file"
+                ;;
+              *.sh)
+                echo "Encoding Shell script: $file"
+                cat "$file" | base64 > "$file.tmp" && mv "$file.tmp" "$file"
+                ;;
+              *)
+                echo "Skipping unsupported file type: $file"
+                ;;
+            esac
+          done
+
+      - name: Push Obfuscated Results
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@://github.com'
+          git add .
+          git commit -m "Auto-obfuscated multi-language and Lua files" || exit 0
+          git push
