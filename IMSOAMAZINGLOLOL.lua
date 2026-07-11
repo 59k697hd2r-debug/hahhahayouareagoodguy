@@ -85,7 +85,10 @@ MiscTab:CreateToggle({
 })
 applyKillbrickImmunity()
 task.spawn(function()
-   while true do task.wait(5) if killbrickEnabled then applyKillbrickImmunity() end end
+   while true do
+      task.wait(5)
+      if killbrickEnabled then applyKillbrickImmunity() end
+   end
 end)
 
 -- ===== Self‑Unjail (ON by default) =====
@@ -179,8 +182,7 @@ end
 task.spawn(function()
    while true do
       task.wait(0.05)
-      if afkMode then continue end
-      if antiCrashSelfEnabled then
+      if not afkMode and antiCrashSelfEnabled then
          local char = LocalPlayer.Character
          if char then
             local root = char:FindFirstChild("HumanoidRootPart")
@@ -198,7 +200,10 @@ task.spawn(function()
       task.wait(0.2)
       local found = false
       for _, obj in ipairs(workspace:GetChildren()) do
-         if obj:IsA("Model") and obj.Name == MY_NAME then found = true break end
+         if obj:IsA("Model") and obj.Name == MY_NAME then
+            found = true
+            break
+         end
       end
       if found then
          modelExists = true
@@ -330,10 +335,15 @@ local function removeByName(names)
    for _, v in pairs(workspace:GetDescendants()) do
       if v:IsA("BasePart") then
          for _, name in ipairs(names) do
-            if v.Name:lower() == name:lower() then table.insert(instances, v) break end
+            if v.Name:lower() == name:lower() then
+               table.insert(instances, v)
+               break
+            end
          end
       end
-      if v:IsA("Model") and v.Name == "Model" then table.insert(instances, v)
+      if v:IsA("Model") and v.Name == "Model" then
+         table.insert(instances, v)
+      end
    end
 
    if #instances == 0 then
@@ -383,20 +393,20 @@ end
 task.spawn(function()
    while true do
       task.wait(5)
-      if not autoTimeFixEnabled then
-         lastTimeFixSent = false
-         continue
-      end
-      local timeOfDay = Lighting.TimeOfDay
-      local hour = tonumber(string.sub(timeOfDay, 1, 2))
-      if hour then
-         local isNight = (hour >= 20 or hour < 6)
-         if isNight and not lastTimeFixSent then
-            ChatEvent:FireServer("time 12", "All")
-            lastTimeFixSent = true
-         elseif not isNight then
-            lastTimeFixSent = false
+      if autoTimeFixEnabled then
+         local timeOfDay = Lighting.TimeOfDay
+         local hour = tonumber(string.sub(timeOfDay, 1, 2))
+         if hour then
+            local isNight = (hour >= 20 or hour < 6)
+            if isNight and not lastTimeFixSent then
+               ChatEvent:FireServer("time 12", "All")
+               lastTimeFixSent = true
+            elseif not isNight then
+               lastTimeFixSent = false
+            end
          end
+      else
+         lastTimeFixSent = false
       end
    end
 end)
@@ -437,8 +447,13 @@ task.spawn(function()
    while true do
       task.wait(0.05)
 
-      for i = #crashMonitored, 1, -1 do if not findPlayer(crashMonitored[i]) then table.remove(crashMonitored, i) end end
-      for i = #deathMonitored, 1, -1 do if not findPlayer(deathMonitored[i]) then table.remove(deathMonitored, i) end end
+      -- Clean up lists
+      for i = #crashMonitored, 1, -1 do
+         if not findPlayer(crashMonitored[i]) then table.remove(crashMonitored, i) end
+      end
+      for i = #deathMonitored, 1, -1 do
+         if not findPlayer(deathMonitored[i]) then table.remove(deathMonitored, i) end
+      end
       for i = #punishMonitored, 1, -1 do
          local plr = findPlayer(punishMonitored[i])
          if not plr then
@@ -451,7 +466,9 @@ task.spawn(function()
             end
          end
       end
-      for i = #jailMonitored, 1, -1 do if not findPlayer(jailMonitored[i]) then table.remove(jailMonitored, i) end end
+      for i = #jailMonitored, 1, -1 do
+         if not findPlayer(jailMonitored[i]) then table.remove(jailMonitored, i) end
+      end
 
       -- Crash
       for _, storedName in ipairs(crashMonitored) do
