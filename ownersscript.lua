@@ -1,5 +1,6 @@
 -- ============================================
--- KHOLS ADMIN – OWNER VERSION (with Whitelist, Silent, Updated .clr)
+-- KHOLS ADMIN – OWNER VERSION
+-- Full features + Owner tab + Whitelist + Silent + Updated .clr
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -258,7 +259,7 @@ local function KickPlayer(target)
    afkRunning = false
 end
 
--- ===== UPDATED .clr – batch 5000, HotPotato + SubspaceTripmine =====
+-- ===== .clr – batch 5000, HotPotato + SubspaceTripmine =====
 local function getSyncAPI()
    local char = LocalPlayer.Character
    if char then
@@ -644,7 +645,7 @@ MiscTab:CreateButton({
       task.wait(0.1)
       notify(".kick", ".kick loaded")
       task.wait(0.1)
-      notify(".clr", ".clr loaded (5000 batch, HotPotato+SubspaceTripmine)")
+      notify(".clr", ".clr updated (5000 batch, HotPotato+SubspaceTripmine)")
       task.wait(0.1)
       notify("Anti-Crash", "Anti-Crash active")
       task.wait(0.1)
@@ -694,7 +695,77 @@ MiscTab:CreateButton({
 -- ===== Killbrick Immunity Toggle =====
 local killbrickEnabled = true
 local originalProps = {}
--- (functions omitted for brevity – they are present in the full script)
+
+local function storeOriginalProperties(part)
+   if originalProps[part] then return end
+   local movers = {}
+   for _, child in ipairs(part:GetChildren()) do
+      if child:IsA("BodyVelocity") or child:IsA("VectorForce") or child:IsA("LinearVelocity") or
+         child:IsA("AngularVelocity") or child:IsA("BodyThrust") or child:IsA("BodyForce") then
+         movers[child] = child.Enabled
+      end
+   end
+   originalProps[part] = { CanTouch = part.CanTouch, Material = part.Material, BodyMovers = movers }
+end
+
+local function revertOriginalProperties(part)
+   local data = originalProps[part]
+   if not data then return end
+   part.CanTouch = data.CanTouch
+   part.Material = data.Material
+   for mover, wasEnabled in pairs(data.BodyMovers) do
+      if mover and mover.Parent then mover.Enabled = wasEnabled end
+   end
+   originalProps[part] = nil
+end
+
+local function applyKillbrickImmunity()
+   if not killbrickEnabled then return end
+   local tabby = workspace:FindFirstChild("Tabby")
+   if not tabby then return end
+   local adminHouse = tabby:FindFirstChild("Admin_House")
+   if not adminHouse then return end
+   local obby = adminHouse:FindFirstChild("Obby")
+   if not obby then return end
+   for _, part in ipairs(obby:GetDescendants()) do
+      if part:IsA("BasePart") then
+         storeOriginalProperties(part)
+         part.CanTouch = false
+         for _, child in ipairs(part:GetChildren()) do
+            if child:IsA("TouchInterest") then child:Destroy() end
+         end
+         part.Material = Enum.Material.Plastic
+         for _, child in ipairs(part:GetChildren()) do
+            if child:IsA("BodyVelocity") or child:IsA("VectorForce") or child:IsA("LinearVelocity") or
+               child:IsA("AngularVelocity") or child:IsA("BodyThrust") or child:IsA("BodyForce") then
+               child.Enabled = false
+            end
+         end
+      end
+   end
+end
+
+local function revertKillbrickImmunity()
+   for part in pairs(originalProps) do revertOriginalProperties(part) end
+   originalProps = {}
+end
+
+MiscTab:CreateToggle({
+   Name = "Killbrick Immunity",
+   CurrentValue = true,
+   Flag = "KillbrickImmunity",
+   Callback = function(v)
+      killbrickEnabled = v
+      if v then applyKillbrickImmunity() else revertKillbrickImmunity() end
+   end
+})
+applyKillbrickImmunity()
+task.spawn(function()
+   while true do
+      task.wait(5)
+      if killbrickEnabled then applyKillbrickImmunity() end
+   end
+end)
 
 -- ===== UI =====
 local afkToggle = CommandsTab:CreateToggle({
@@ -756,54 +827,208 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
       end
 
       -- Self toggles
-      if msg == ".antipunish" then antiPunishSelfEnabled = true; antiPunishSelfToggle:Set(true); if silentMode then return nil end
-      elseif msg == ".ppunish" then antiPunishSelfEnabled = false; antiPunishSelfToggle:Set(false); if silentMode then return nil end
-      elseif msg == ".stopclr" then clrStop = true; print("[.clr] Stop requested."); if silentMode then return nil end
+      if msg == ".antipunish" then
+         antiPunishSelfEnabled = true
+         antiPunishSelfToggle:Set(true)
+         if silentMode then return nil end
+      elseif msg == ".ppunish" then
+         antiPunishSelfEnabled = false
+         antiPunishSelfToggle:Set(false)
+         if silentMode then return nil end
+      elseif msg == ".stopclr" then
+         clrStop = true
+         print("[.clr] Stop requested.")
+         if silentMode then return nil end
 
       -- .afk
       elseif string.sub(msg, 1, 4) == ".afk" then
-         local rest = string.sub(msg, 5); target = (string.len(rest) > 0 and string.sub(rest, 1, 1) == " ") and string.sub(rest, 2) or "me"; if target == "" then target = "me" end
-         task.spawn(SetAFK, target); if silentMode then return nil end
+         local rest = string.sub(msg, 5)
+         target = (string.len(rest) > 0 and string.sub(rest, 1, 1) == " ") and string.sub(rest, 2) or "me"
+         if target == "" then target = "me" end
+         task.spawn(SetAFK, target)
+         if silentMode then return nil end
 
       -- .unafk
       elseif string.sub(msg, 1, 6) == ".unafk" then
-         local rest = string.sub(msg, 7); target = (string.len(rest) > 0 and string.sub(rest, 1, 1) == " ") and string.sub(rest, 2) or "me"; if target == "" then target = "me" end
-         task.spawn(SetUnAFK, target); if silentMode then return nil end
+         local rest = string.sub(msg, 7)
+         target = (string.len(rest) > 0 and string.sub(rest, 1, 1) == " ") and string.sub(rest, 2) or "me"
+         if target == "" then target = "me" end
+         task.spawn(SetUnAFK, target)
+         if silentMode then return nil end
 
       -- .kick
       elseif string.sub(msg, 1, 5) == ".kick" then
-         local rest = string.sub(msg, 6); target = (string.len(rest) > 0 and string.sub(rest, 1, 1) == " ") and string.sub(rest, 2) or "me"; if target == "" then target = "me" end
-         task.spawn(KickPlayer, target); if silentMode then return nil end
+         local rest = string.sub(msg, 6)
+         target = (string.len(rest) > 0 and string.sub(rest, 1, 1) == " ") and string.sub(rest, 2) or "me"
+         if target == "" then target = "me" end
+         task.spawn(KickPlayer, target)
+         if silentMode then return nil end
 
       -- .clr
       elseif msg == ".clr" then
          task.spawn(function()
-            if clrRunning then return end; clrRunning = true
+            if clrRunning then return end
+            clrRunning = true
             removeByName({"Part", "Truss", "Seat", "SubspaceTripmine"})
             clrRunning = false
-         end); if silentMode then return nil end
+         end)
+         if silentMode then return nil end
 
       -- Monitor commands (protective, not blocked by whitelist)
       elseif string.sub(msg, 1, 11) == ".anticrash " then
-         local username = string.sub(args[1], 12); username = username:gsub("^%s+", ""):gsub("%s+$", "")
-         if username ~= "" then addToMonitor(crashMonitored, username) print("[AntiCrash] Now monitoring " .. username) else print("[AntiCrash] Please specify a username or 'all'.") end
+         local username = string.sub(args[1], 12)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            addToMonitor(crashMonitored, username)
+            print("[AntiCrash] Now monitoring " .. username)
+         else
+            print("[AntiCrash] Please specify a username or 'all'.")
+         end
          if silentMode then return nil end
-      -- (similar for others – omitted for brevity but will be in the final script)
+      elseif string.sub(msg, 1, 13) == ".unanticrash " then
+         local username = string.sub(args[1], 14)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            if removeFromMonitor(crashMonitored, username) then
+               print("[AntiCrash] Stopped monitoring " .. username)
+            else
+               print("[AntiCrash] " .. username .. " not being monitored.")
+            end
+         else
+            print("[AntiCrash] Please specify a username or 'all'.")
+         end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 11) == ".antideath " then
+         local username = string.sub(args[1], 12)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            addToMonitor(deathMonitored, username)
+            print("[AntiDeath] Now monitoring " .. username)
+         else
+            print("[AntiDeath] Please specify a username or 'all'.")
+         end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 13) == ".unantideath " then
+         local username = string.sub(args[1], 14)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            if removeFromMonitor(deathMonitored, username) then
+               print("[AntiDeath] Stopped monitoring " .. username)
+            else
+               print("[AntiDeath] " .. username .. " not being monitored.")
+            end
+         else
+            print("[AntiDeath] Please specify a username or 'all'.")
+         end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 12) == ".antipunish " then
+         local username = string.sub(args[1], 13)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            addToMonitor(punishMonitored, username)
+            print("[AntiPunish] Now monitoring " .. username)
+         else
+            print("[AntiPunish] Please specify a username or 'all'.")
+         end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 14) == ".unantipunish " then
+         local username = string.sub(args[1], 15)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            if removeFromMonitor(punishMonitored, username) then
+               print("[AntiPunish] Stopped monitoring " .. username)
+            else
+               print("[AntiPunish] " .. username .. " not being monitored.")
+            end
+         else
+            print("[AntiPunish] Please specify a username or 'all'.")
+         end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 9) == ".antiall " then
+         local username = string.sub(args[1], 10)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            addToAllMonitors(username)
+            print("[AntiAll] Now monitoring all for " .. username)
+         else
+            print("[AntiAll] Please specify a username or 'all'.")
+         end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 11) == ".unantiall " then
+         local username = string.sub(args[1], 12)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            if removeFromAllMonitors(username) then
+               print("[AntiAll] Stopped monitoring all for " .. username)
+            else
+               print("[AntiAll] " .. username .. " not being monitored.")
+            end
+         else
+            print("[AntiAll] Please specify a username or 'all'.")
+         end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 10) == ".antijail " then
+         local username = string.sub(args[1], 11)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            if addJailMonitor(username) then
+               print("[AntiJail] Now monitoring " .. username .. " for jail.")
+            else
+               print("[AntiJail] " .. username .. " already monitored.")
+            end
+         else
+            print("[AntiJail] Please specify a username or 'all'.")
+         end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 12) == ".unantijail " then
+         local username = string.sub(args[1], 13)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            if removeJailMonitor(username) then
+               print("[AntiJail] Stopped monitoring " .. username)
+            else
+               print("[AntiJail] " .. username .. " not being monitored.")
+            end
+         else
+            print("[AntiJail] Please specify a username or 'all'.")
+         end
+         if silentMode then return nil end
 
       -- .ban / .unban
       elseif string.sub(msg, 1, 5) == ".ban " then
-         local username = string.sub(args[1], 6); username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         local username = string.sub(args[1], 6)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
          if username ~= "" then
-            if isWhitelisted(username) then print("[Whitelist] " .. username .. " is whitelisted – .ban blocked.")
+            if isWhitelisted(username) then
+               print("[Whitelist] " .. username .. " is whitelisted – .ban blocked.")
             else
-               if findPlayer(username) then task.spawn(KickPlayer, username) else print("[Ban] Player not found, but will monitor.") end
-               if addBanMonitor(username) then print("[Ban] Now monitoring " .. username) else print("[Ban] Already monitoring " .. username) end
+               if findPlayer(username) then
+                  task.spawn(KickPlayer, username)
+               else
+                  print("[Ban] Player not found, but will monitor.")
+               end
+               if addBanMonitor(username) then
+                  print("[Ban] Now monitoring " .. username)
+               else
+                  print("[Ban] Already monitoring " .. username)
+               end
             end
-         else print("[Ban] Please specify a username.") end
+         else
+            print("[Ban] Please specify a username.")
+         end
          if silentMode then return nil end
       elseif string.sub(msg, 1, 7) == ".unban " then
-         local username = string.sub(args[1], 8); username = username:gsub("^%s+", ""):gsub("%s+$", "")
-         if username ~= "" then if removeBanMonitor(username) then print("[Ban] Stopped monitoring " .. username) else print("[Ban] Not monitored.") end else print("[Ban] Please specify a username.") end
+         local username = string.sub(args[1], 8)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            if removeBanMonitor(username) then
+               print("[Ban] Stopped monitoring " .. username)
+            else
+               print("[Ban] Not monitored.")
+            end
+         else
+            print("[Ban] Please specify a username.")
+         end
          if silentMode then return nil end
       end
    end
@@ -811,7 +1036,10 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
 end)
 
 -- ===== Auto‑send "startergive self" =====
-task.spawn(function() task.wait(1); sendMessage("startergive self", "System") end)
+task.spawn(function()
+   task.wait(1)
+   sendMessage("startergive self", "System")
+end)
 
 -- ===== Notification =====
 local function notify(title, text)
