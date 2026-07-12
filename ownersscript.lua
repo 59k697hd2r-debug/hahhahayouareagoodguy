@@ -1030,7 +1030,7 @@ CommandsTab:CreateButton({ Name = "Hide GUI", Callback = function() Rayfield:Set
 CommandsTab:CreateButton({ Name = "Show GUI", Callback = function() Rayfield:SetVisibility(true) end })
 CommandsTab:CreateButton({ Name = "Destroy GUI", Callback = function() Rayfield:Destroy() end })
 
--- ===== Troll Tab – Fire Click Detector button =====
+-- ===== Troll Tab – Fire Click Detector button (FIXED) =====
 TrollTab:CreateButton({
    Name = "Fire Click Detector",
    Callback = function()
@@ -1064,9 +1064,9 @@ TrollTab:CreateButton({
       -- Set activation distance to huge so it works from anywhere
       cd.MaxActivationDistance = 99999
 
-      -- Fire the click
+      -- Use fireclickdetector (the correct method)
       local success, err = pcall(function()
-         cd:Click()
+         fireclickdetector(cd)
       end)
       if success then
          print("[Troll] Regen ClickDetector fired.")
