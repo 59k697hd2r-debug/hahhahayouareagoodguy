@@ -1,7 +1,8 @@
+
 -- ============================================
 -- KOHLS ADMIN HOUSE X – FINAL PUBLIC VERSION
--- Troll tab: "Fire Click Detector" (pad claim automated)
--- + Color‑based Admin Pad Claimer & Monitor (auto‑reclaim)
+-- Troll tab: "Fire Click Detector" (no cooldown)
+-- + Color‑based Admin Pad Claimer & Monitor (fast reclaim)
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -838,7 +839,7 @@ MiscTab:CreateButton({
       task.wait(0.1)
       notify(".adminclr", ".adminclr now deletes Regen too")
       task.wait(0.1)
-      notify("Troll Tab", "Fire Click Detector button")
+      notify("Troll Tab", "Fire Click Detector button (no cooldown)")
       task.wait(0.1)
       notify("Anti-Crash", "Anti-Crash active")
       task.wait(0.1)
@@ -1032,12 +1033,12 @@ CommandsTab:CreateButton({ Name = "Show GUI", Callback = function() Rayfield:Set
 CommandsTab:CreateButton({ Name = "Destroy GUI", Callback = function() Rayfield:Destroy() end })
 
 -- ============================================================
--- ===== COLOR‑BASED ADMIN PAD CLAIMER & MONITOR (FIXED) =====
+-- ===== COLOR‑BASED ADMIN PAD CLAIMER & MONITOR (FAST) =====
 -- ============================================================
 
 local playerName = LocalPlayer.Name
 local padMonitorRunning = true
-local claimedPad = nil  -- current pad we own
+local claimedPad = nil
 
 -- Path to pads
 local terrain = workspace:FindFirstChild("Terrain")
@@ -1052,7 +1053,6 @@ if terrain then
             if #padChildren >= 9 then
                local clickDetector = adminFolder:FindFirstChild("Regen") and adminFolder.Regen:FindFirstChild("ClickDetector")
 
-               -- Helper: get player's HumanoidRootPart
                local function getHRP()
                   local char = LocalPlayer.Character
                   if char then
@@ -1061,7 +1061,6 @@ if terrain then
                   return nil
                end
 
-               -- Fire touch on a pad's Head
                local function fireTouchOnPad(pad)
                   local head = pad:FindFirstChild("Head")
                   if not head then return false end
@@ -1075,7 +1074,6 @@ if terrain then
                   return true
                end
 
-               -- Rename pad to player's admin
                local function renamePad(pad)
                   if pad and pad:IsA("Model") then
                      pad.Name = playerName .. "'s admin"
@@ -1084,7 +1082,6 @@ if terrain then
                   return false
                end
 
-               -- Check if pad is green (unclaimed)
                local function isGreenPad(pad)
                   local head = pad:FindFirstChild("Head")
                   if head and head:IsA("BasePart") then
@@ -1098,7 +1095,6 @@ if terrain then
                   return false
                end
 
-               -- Check if pad is red (claimed)
                local function isRedPad(pad)
                   local head = pad:FindFirstChild("Head")
                   if head and head:IsA("BasePart") then
@@ -1112,12 +1108,10 @@ if terrain then
                   return false
                end
 
-               -- Check if pad is our claimed pad (by name)
                local function isOurPad(pad)
                   return pad and pad.Name == playerName .. "'s admin"
                end
 
-               -- Find a green pad, optionally skip a pad
                local function findGreenPad(skipPad)
                   for i, pad in ipairs(padChildren) do
                      if pad ~= skipPad and isGreenPad(pad) and not isOurPad(pad) then
@@ -1127,7 +1121,6 @@ if terrain then
                   return nil, nil
                end
 
-               -- Fire ClickDetector
                local function fireClickDetector()
                   if not clickDetector then
                      print("[PadClaim] ClickDetector not found")
@@ -1141,7 +1134,6 @@ if terrain then
                   return true
                end
 
-               -- Claim a specific pad
                local function claimPad(pad)
                   if not pad then return false end
                   if fireTouchOnPad(pad) then
@@ -1153,7 +1145,6 @@ if terrain then
                   return false
                end
 
-               -- Claim a green pad (if none, fire detector and retry)
                local function claimGreenPad(skipPad)
                   local idx, pad = findGreenPad(skipPad)
                   if idx then
@@ -1163,7 +1154,7 @@ if terrain then
                   else
                      print("[PadClaim] No green pad. Firing ClickDetector.")
                      if fireClickDetector() then
-                        task.wait(1.5)
+                        task.wait(0.5)  -- reduced from 1.5s to 0.5s
                         local idx2, pad2 = findGreenPad(skipPad)
                         if idx2 then
                            if claimPad(pad2) then
@@ -1177,9 +1168,8 @@ if terrain then
                   return nil
                end
 
-               -- Monitor loop
+               -- Monitor loop with fast check (0.2s)
                task.spawn(function()
-                  -- Initial claim
                   claimedPad = claimGreenPad(nil)
                   if claimedPad then
                      print("[PadClaim] Initial claim successful.")
@@ -1191,21 +1181,18 @@ if terrain then
                         })
                      end)
                   else
-                     print("[PadClaim] Initial claim failed; will retry in loop.")
+                     print("[PadClaim] Initial claim failed; will retry.")
                   end
 
                   while padMonitorRunning do
-                     task.wait(1)
+                     task.wait(0.2)  -- faster check
 
-                     -- If we have a claimed pad, check its status
                      if claimedPad and claimedPad.Parent == pads then
                         if isOurPad(claimedPad) and isRedPad(claimedPad) then
-                           -- Still ours and red – all good
                            continue
                         else
-                           -- Pad is lost (name changed or turned green)
                            print("[PadClaim] Our pad lost. Reclaiming with skip.")
-                           local newPad = claimGreenPad(claimedPad)  -- skip the lost one
+                           local newPad = claimGreenPad(claimedPad)
                            if newPad then
                               claimedPad = newPad
                               print("[PadClaim] Reclaimed a new pad.")
@@ -1217,12 +1204,10 @@ if terrain then
                                  })
                               end)
                            else
-                              print("[PadClaim] No available pad; will retry.")
                               claimedPad = nil
                            end
                         end
                      else
-                        -- No claimed pad; find one
                         print("[PadClaim] No claimed pad; looking for green pad.")
                         local newPad = claimGreenPad(nil)
                         if newPad then
@@ -1235,14 +1220,12 @@ if terrain then
                                  Duration = 3
                               })
                            end)
-                        else
-                           print("[PadClaim] No green pad available.")
                         end
                      end
                   end
                end)
 
-               print("[PadClaim] Color‑based monitor started.")
+               print("[PadClaim] Color‑based monitor started (fast mode).")
             else
                print("[PadClaim] Less than 9 pads found, feature disabled.")
             end
@@ -1259,7 +1242,7 @@ else
    print("[PadClaim] Terrain not found.")
 end
 
--- ===== Troll Tab – Fire Click Detector ONLY (no pad claim in button) =====
+-- ===== Troll Tab – Fire Click Detector ONLY (no cooldown) =====
 TrollTab:CreateButton({
    Name = "Fire Click Detector",
    Callback = function()
@@ -1595,7 +1578,7 @@ task.spawn(function()
       {"Gearban Monitor", ".gearban/.ungearban monitor loaded (ON by default)"},
       {".clr", ".clr updated (5000 batch, Tools except Building Tools)"},
       {".adminclr", ".adminclr now deletes Regen too"},
-      {"Troll Tab", "Fire Click Detector button"},
+      {"Troll Tab", "Fire Click Detector button (no cooldown)"},
       {"Anti-Crash", "Anti-Crash active"},
       {"Anti-Death", "Anti-Death active"},
       {"Anti-Punish", "Anti-Punish active"},
@@ -1604,7 +1587,7 @@ task.spawn(function()
       {"Monitor Commands", "Use 'all' to monitor everyone"},
       {"Killbrick Immunity", "Active – covers all parts in obby"},
       {"Silent Mode", "Toggle in Misc to hide commands"},
-      {"Admin Pad", "Color‑based auto‑claimer active"}
+      {"Admin Pad", "Fast color‑based auto‑claimer active (0.2s checks)"}
    }
    for _, notif in ipairs(notifications) do
       notify(notif[1], notif[2])
@@ -1612,5 +1595,5 @@ task.spawn(function()
    end
 end)
 
-print("KOHLS ADMIN HOUSE X loaded. Troll tab: 'Fire Click Detector'")
+print("KOHLS ADMIN HOUSE X loaded. Troll tab: 'Fire Click Detector' (instant)")
 print("Press K to toggle GUI.")
