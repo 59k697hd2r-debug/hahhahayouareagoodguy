@@ -1,14 +1,12 @@
 -- ============================================
--- KHOLS ADMIN – PUBLIC VERSION
--- No whitelist, no owner features.
--- .clr deletes all Tools except "Building Tools",
--- plus Part, Truss, Seat, SubspaceTripmine, and models named "Model".
+-- KOHLS ADMIN HOUSE X – FINAL PUBLIC VERSION
+-- Integrated .adminclr, fixed anti‑death/punish, killbrick immunity covers corpse parts
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "Khols Admin GUI",
+   Name = "KOHLS ADMIN HOUSE X",
    Icon = 0,
    LoadingTitle = "Khols Admin",
    LoadingSubtitle = "by gamprogamer99",
@@ -32,6 +30,18 @@ MiscTab:CreateToggle({
    Callback = function(v)
       silentMode = v
       print("[Silent] " .. (v and "ON (commands hidden)" or "OFF"))
+   end
+})
+
+-- ===== Gearban Toggle =====
+local gearbanEnabled = true
+CommandsTab:CreateToggle({
+   Name = "Gearban Command (.gearban)",
+   CurrentValue = true,
+   Flag = "GearbanEnabled",
+   Callback = function(v)
+      gearbanEnabled = v
+      print("[Gearban] " .. (v and "ENABLED" or "DISABLED"))
    end
 })
 
@@ -238,6 +248,24 @@ local function KickPlayer(target)
    afkRunning = false
 end
 
+-- ===== .gearban =====
+local function Gearban(target)
+   if not gearbanEnabled then
+      print("[Gearban] Command disabled.")
+      return
+   end
+   if afkRunning then return end
+   afkRunning = true
+   sendMessage("gear me portable", "System")
+   task.wait(0.05)
+   sendMessage("give me portable", "System")
+   task.wait(0.05)
+   sendMessage("bring " .. target, "System")
+   task.wait(0.05)
+   sendMessage("speed " .. target .. " 0", "System")
+   afkRunning = false
+end
+
 -- ===== .clr – batch 5000, all Tools except "Building Tools" =====
 local function getSyncAPI()
    local char = LocalPlayer.Character
@@ -332,6 +360,51 @@ local function removeByName(names)
    else
       print("[.clr] Removed " .. total .. " instances.")
    end
+end
+
+-- ===== .adminclr (integrated) =====
+local function adminClear()
+   local endpoint = getSyncAPI()
+   if not endpoint then
+      print("[.adminclr] Building Tools not found.")
+      return
+   end
+
+   local targets = {"House", "Obby Box", "Obby", "Baseplate"}
+   local instances = {}
+   for _, v in pairs(workspace:GetDescendants()) do
+      if v:IsA("Model") then
+         for _, name in ipairs(targets) do
+            if v.Name == name then
+               table.insert(instances, v)
+               break
+            end
+         end
+      end
+   end
+
+   if #instances == 0 then
+      print("[.adminclr] No matching models found.")
+      return
+   end
+
+   print("[.adminclr] Found " .. #instances .. " models. Deleting...")
+   local total = 0
+   local batchSize = 5000
+   for i = 1, #instances, batchSize do
+      local batch = {}
+      for j = i, math.min(i + batchSize - 1, #instances) do
+         table.insert(batch, instances[j])
+      end
+      local success = pcall(function()
+         endpoint:InvokeServer("Remove", batch)
+      end)
+      if success then
+         total = total + #batch
+      end
+      task.wait(0.01)
+   end
+   print("[.adminclr] Removed " .. total .. " models.")
 end
 
 -- ===== Auto Time Fix =====
@@ -660,13 +733,17 @@ MiscTab:CreateButton({
             })
          end)
       end
-      notify("Khols Admin", "All features reloaded")
+      notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
       notify(".afk", ".afk loaded")
       task.wait(0.1)
       notify(".kick", ".kick loaded")
       task.wait(0.1)
-      notify(".clr", ".clr updated (5000 batch, all Tools except Building Tools)")
+      notify(".gearban", ".gearban loaded")
+      task.wait(0.1)
+      notify(".clr", ".clr updated (5000 batch, Tools except Building Tools)")
+      task.wait(0.1)
+      notify(".adminclr", ".adminclr loaded (House, Obby Box, Obby, Baseplate)")
       task.wait(0.1)
       notify("Anti-Crash", "Anti-Crash active")
       task.wait(0.1)
@@ -680,7 +757,7 @@ MiscTab:CreateButton({
       task.wait(0.1)
       notify("Monitor Commands", "Use 'all' to monitor everyone")
       task.wait(0.1)
-      notify("Killbrick Immunity", "Active")
+      notify("Killbrick Immunity", "Active (covers all parts in obby)")
       if silentMode then
          notify("Silent Mode", "Commands are hidden from chat")
       end
@@ -694,7 +771,9 @@ MiscTab:CreateButton({
       print(".afk <user> – freeze, god, ff")
       print(".unafk <user> – reset")
       print(".kick <user> – gear me potato (3x), give me potato (4x), bring, freeze, size nan")
+      print(".gearban <user> – gear me portable, give me portable, bring <user>, speed <user> 0")
       print(".clr – delete all Tools (except Building Tools), Part, Truss, Seat, SubspaceTripmine, and models named 'Model' (5000 batch)")
+      print(".adminclr – delete House, Obby Box, Obby, Baseplate (game respawns them)")
       print(".stopclr – stop ongoing .clr")
       print(".anticrash <user> – monitor anchored (use 'all' for everyone)")
       print(".unanticrash <user> – stop monitoring")
@@ -715,7 +794,7 @@ MiscTab:CreateButton({
    end
 })
 
--- ===== Killbrick Immunity Toggle =====
+-- ===== Killbrick Immunity (covers ALL BaseParts in the obby, including corpse parts) =====
 local killbrickEnabled = true
 local originalProps = {}
 
@@ -752,6 +831,8 @@ local function applyKillbrickImmunity()
    if not adminHouse then return end
    local obby = adminHouse:FindFirstChild("Obby")
    if not obby then return end
+
+   -- Disable CanTouch on ALL BaseParts inside the obby (including corpse parts)
    for _, part in ipairs(obby:GetDescendants()) do
       if part:IsA("BasePart") then
          storeOriginalProperties(part)
@@ -901,6 +982,14 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
          task.spawn(KickPlayer, target)
          if silentMode then return nil end
 
+      -- .gearban
+      elseif string.sub(msg, 1, 9) == ".gearban " then
+         local rest = string.sub(msg, 10)
+         target = (string.len(rest) > 0 and string.sub(rest, 1, 1) == " ") and string.sub(rest, 2) or rest
+         if target == "" then target = "me" end
+         task.spawn(Gearban, target)
+         if silentMode then return nil end
+
       -- .clr
       elseif msg == ".clr" then
          task.spawn(function()
@@ -909,6 +998,11 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             removeByName({"Part", "Truss", "Seat", "SubspaceTripmine"})
             clrRunning = false
          end)
+         if silentMode then return nil end
+
+      -- .adminclr
+      elseif msg == ".adminclr" then
+         task.spawn(adminClear)
          if silentMode then return nil end
 
       -- Monitor commands (protective)
@@ -1088,17 +1182,19 @@ end
 task.spawn(function()
    task.wait(1.5)
    local notifications = {
-      {"Khols Admin", "Public version loaded!"},
+      {"KOHLS ADMIN HOUSE X", "Public version loaded!"},
       {".afk", ".afk loaded"},
       {".kick", ".kick loaded"},
+      {".gearban", ".gearban loaded"},
       {".clr", ".clr updated (5000 batch, Tools except Building Tools)"},
+      {".adminclr", ".adminclr loaded (House, Obby Box, Obby, Baseplate)"},
       {"Anti-Crash", "Anti-Crash active"},
       {"Anti-Death", "Anti-Death active"},
       {"Anti-Punish", "Anti-Punish active"},
       {"Jail Monitor", "Self-Unjail active"},
       {"Ban System", ".ban / .unban loaded"},
       {"Monitor Commands", "Use 'all' to monitor everyone"},
-      {"Killbrick Immunity", "Active"},
+      {"Killbrick Immunity", "Active – covers all parts in obby (including corpse parts)"},
       {"Silent Mode", "Toggle in Misc to hide commands"}
    }
    for _, notif in ipairs(notifications) do
@@ -1107,5 +1203,5 @@ task.spawn(function()
    end
 end)
 
-print("Khols Admin Public GUI loaded. .clr now skips Building Tools.")
+print("KOHLS ADMIN HOUSE X loaded. .adminclr integrated, killbrick immunity covers corpse parts.")
 print("Press K to toggle GUI.")
