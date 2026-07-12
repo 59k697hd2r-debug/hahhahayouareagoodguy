@@ -1,6 +1,6 @@
 -- ============================================
 -- KOHLS ADMIN HOUSE X – FINAL PUBLIC VERSION
--- .gearban now notifies and includes unff/ungod
+-- Fixed .adminclr (deletes all targets) + .gearban notification
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -247,7 +247,7 @@ local function KickPlayer(target)
    afkRunning = false
 end
 
--- ===== .gearban (updated) =====
+-- ===== .gearban =====
 local function Gearban(target)
    if not gearbanEnabled then
       print("[Gearban] Command disabled.")
@@ -256,7 +256,6 @@ local function Gearban(target)
    if afkRunning then return end
    afkRunning = true
 
-   -- Notify the executor
    pcall(function()
       StarterGui:SetCore("SendNotification", {
          Title = "Gearban",
@@ -280,7 +279,7 @@ local function Gearban(target)
    afkRunning = false
 end
 
--- ===== .clr (unchanged) =====
+-- ===== .clr =====
 local function getSyncAPI()
    local char = LocalPlayer.Character
    if char then
@@ -373,7 +372,7 @@ local function removeByName(names)
    end
 end
 
--- ===== .adminclr (integrated) =====
+-- ===== .adminclr (FIXED – deletes Models and BaseParts) =====
 local function adminClear()
    local endpoint = getSyncAPI()
    if not endpoint then
@@ -381,10 +380,10 @@ local function adminClear()
       return
    end
 
-   local targets = {"House", "Obby Box", "Obby", "Baseplate"}
+   local targets = {"House", "Obby Box", "Obby", "Baseplate", "Grids"}
    local instances = {}
    for _, v in pairs(workspace:GetDescendants()) do
-      if v:IsA("Model") then
+      if v:IsA("Model") or v:IsA("BasePart") then
          for _, name in ipairs(targets) do
             if v.Name == name then
                table.insert(instances, v)
@@ -395,11 +394,11 @@ local function adminClear()
    end
 
    if #instances == 0 then
-      print("[.adminclr] No matching models found.")
+      print("[.adminclr] No matching instances found.")
       return
    end
 
-   print("[.adminclr] Found " .. #instances .. " models. Deleting...")
+   print("[.adminclr] Found " .. #instances .. " instances. Deleting...")
    local total = 0
    local batchSize = 5000
    for i = 1, #instances, batchSize do
@@ -415,7 +414,7 @@ local function adminClear()
       end
       task.wait(0.01)
    end
-   print("[.adminclr] Removed " .. total .. " models.")
+   print("[.adminclr] Removed " .. total .. " instances.")
 end
 
 -- ===== Auto Time Fix =====
@@ -754,7 +753,7 @@ MiscTab:CreateButton({
       task.wait(0.1)
       notify(".clr", ".clr updated (5000 batch, Tools except Building Tools)")
       task.wait(0.1)
-      notify(".adminclr", ".adminclr loaded (House, Obby Box, Obby, Baseplate)")
+      notify(".adminclr", ".adminclr loaded (House, Obby Box, Obby, Baseplate, Grids)")
       task.wait(0.1)
       notify("Anti-Crash", "Anti-Crash active")
       task.wait(0.1)
@@ -784,7 +783,7 @@ MiscTab:CreateButton({
       print(".kick <user> – gear me potato (3x), give me potato (4x), bring, freeze, size nan")
       print(".gearban <user> – gear me portable, give me portable, bring, unff, ungod, speed 0 (with notification)")
       print(".clr – delete all Tools (except Building Tools), Part, Truss, Seat, SubspaceTripmine, and models named 'Model' (5000 batch)")
-      print(".adminclr – delete House, Obby Box, Obby, Baseplate (game respawns them)")
+      print(".adminclr – delete House, Obby Box, Obby, Baseplate, Grids (game respawns them)")
       print(".stopclr – stop ongoing .clr")
       print(".anticrash <user> – monitor anchored (use 'all' for everyone)")
       print(".unanticrash <user> – stop monitoring")
@@ -805,7 +804,7 @@ MiscTab:CreateButton({
    end
 })
 
--- ===== Killbrick Immunity (covers ALL BaseParts in obby) =====
+-- ===== Killbrick Immunity =====
 local killbrickEnabled = true
 local originalProps = {}
 
@@ -1197,7 +1196,7 @@ task.spawn(function()
       {".kick", ".kick loaded"},
       {".gearban", ".gearban loaded (now notifies & includes unff/ungod)"},
       {".clr", ".clr updated (5000 batch, Tools except Building Tools)"},
-      {".adminclr", ".adminclr loaded (House, Obby Box, Obby, Baseplate)"},
+      {".adminclr", ".adminclr now deletes House, Obby Box, Obby, Baseplate, Grids"},
       {"Anti-Crash", "Anti-Crash active"},
       {"Anti-Death", "Anti-Death active"},
       {"Anti-Punish", "Anti-Punish active"},
@@ -1213,5 +1212,5 @@ task.spawn(function()
    end
 end)
 
-print("KOHLS ADMIN HOUSE X loaded. .gearban now includes unff/ungod and a notification.")
+print("KOHLS ADMIN HOUSE X loaded. .adminclr now removes Grids too.")
 print("Press K to toggle GUI.")
