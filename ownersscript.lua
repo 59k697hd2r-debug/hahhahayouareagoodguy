@@ -1,7 +1,7 @@
 -- ============================================
 -- KOHLS ADMIN HOUSE X – FINAL PUBLIC VERSION
 -- Troll tab: "Fire Click Detector" (no cooldown)
--- + Color‑based Admin Pad Claimer & Monitor (robust retry)
+-- + Color‑based Admin Pad Claimer & Monitor (claims ONE pad only)
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -1032,7 +1032,8 @@ CommandsTab:CreateButton({ Name = "Show GUI", Callback = function() Rayfield:Set
 CommandsTab:CreateButton({ Name = "Destroy GUI", Callback = function() Rayfield:Destroy() end })
 
 -- ============================================================
--- ===== COLOR‑BASED ADMIN PAD CLAIMER & MONITOR (ROBUST) =====
+-- ===== COLOR‑BASED ADMIN PAD CLAIMER & MONITOR (FIXED) =====
+-- Claims ONE pad, monitors it, and reclaims ONLY when lost.
 -- ============================================================
 
 local playerName = LocalPlayer.Name
@@ -1144,36 +1145,33 @@ if terrain then
                   return false
                end
 
-               -- Improved claimGreenPad with retry loop
+               -- Claim one green pad; if none, fire detector and retry (with timeout)
                local function claimGreenPad(skipPad)
-                  -- First, try to find a green pad immediately
                   local idx, pad = findGreenPad(skipPad)
                   if idx then
                      if claimPad(pad) then
                         return pad
                      end
-                  end
-
-                  -- No green pad found; fire detector and wait for reset
-                  print("[PadClaim] No green pad. Firing ClickDetector and waiting for reset.")
-                  if fireClickDetector() then
-                     -- Wait up to 5 seconds for a green pad to appear
-                     local startTime = tick()
-                     while tick() - startTime < 5 do
-                        task.wait(0.3)
-                        local idx2, pad2 = findGreenPad(skipPad)
-                        if idx2 then
-                           if claimPad(pad2) then
-                              return pad2
+                  else
+                     print("[PadClaim] No green pad. Firing ClickDetector and waiting.")
+                     if fireClickDetector() then
+                        local start = tick()
+                        while tick() - start < 4 do
+                           task.wait(0.3)
+                           local idx2, pad2 = findGreenPad(skipPad)
+                           if idx2 then
+                              if claimPad(pad2) then
+                                 return pad2
+                              end
                            end
                         end
+                        print("[PadClaim] Timeout waiting for green pad.")
                      end
-                     print("[PadClaim] Timeout waiting for green pad after reset.")
                   end
                   return nil
                end
 
-               -- Monitor loop
+               -- Monitor loop – only reclaim if the pad is no longer ours
                task.spawn(function()
                   claimedPad = claimGreenPad(nil)
                   if claimedPad then
@@ -1190,16 +1188,17 @@ if terrain then
                   end
 
                   while padMonitorRunning do
-                     task.wait(0.2)
+                     task.wait(0.3)
 
                      if claimedPad and claimedPad.Parent == pads then
-                        if isOurPad(claimedPad) and isRedPad(claimedPad) then
-                           -- Still ours and red – all good
+                        -- Check if it's still our pad (by name)
+                        if isOurPad(claimedPad) then
+                           -- Still ours – keep it, no action
                            continue
                         else
-                           -- Lost pad
-                           print("[PadClaim] Our pad lost. Reclaiming with skip.")
-                           local newPad = claimGreenPad(claimedPad)
+                           -- Name changed – lost it
+                           print("[PadClaim] Our pad lost (name changed). Reclaiming.")
+                           local newPad = claimGreenPad(claimedPad) -- skip the lost one
                            if newPad then
                               claimedPad = newPad
                               print("[PadClaim] Reclaimed a new pad.")
@@ -1215,7 +1214,7 @@ if terrain then
                            end
                         end
                      else
-                        -- No claimed pad
+                        -- No claimed pad or it was removed
                         print("[PadClaim] No claimed pad; looking for green pad.")
                         local newPad = claimGreenPad(nil)
                         if newPad then
@@ -1233,7 +1232,7 @@ if terrain then
                   end
                end)
 
-               print("[PadClaim] Robust color‑based monitor started.")
+               print("[PadClaim] Monitor started – will claim ONE pad and keep it.")
             else
                print("[PadClaim] Less than 9 pads found, feature disabled.")
             end
@@ -1595,7 +1594,7 @@ task.spawn(function()
       {"Monitor Commands", "Use 'all' to monitor everyone"},
       {"Killbrick Immunity", "Active – covers all parts in obby"},
       {"Silent Mode", "Toggle in Misc to hide commands"},
-      {"Admin Pad", "Robust auto‑claimer (retry on reset)"}
+      {"Admin Pad", "Claims ONE pad and monitors it continuously"}
    }
    for _, notif in ipairs(notifications) do
       notify(notif[1], notif[2])
