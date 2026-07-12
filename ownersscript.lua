@@ -1,7 +1,7 @@
 -- ============================================
 -- KOHLS ADMIN HOUSE X – FINAL PUBLIC VERSION
--- Troll tab: "Fire Click Detector" button
--- + Color‑based Admin Pad Claimer & Monitor
+-- Troll tab: "Fire Click Detector" (pad claim automated)
+-- + Color‑based Admin Pad Claimer & Monitor (auto‑reclaim)
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -838,7 +838,7 @@ MiscTab:CreateButton({
       task.wait(0.1)
       notify(".adminclr", ".adminclr now deletes Regen too")
       task.wait(0.1)
-      notify("Troll Tab", "Fire Click Detector + Pad Claimer")
+      notify("Troll Tab", "Fire Click Detector button")
       task.wait(0.1)
       notify("Anti-Crash", "Anti-Crash active")
       task.wait(0.1)
@@ -1032,9 +1032,10 @@ CommandsTab:CreateButton({ Name = "Show GUI", Callback = function() Rayfield:Set
 CommandsTab:CreateButton({ Name = "Destroy GUI", Callback = function() Rayfield:Destroy() end })
 
 -- ============================================================
--- ===== COLOR‑BASED ADMIN PAD CLAIMER & MONITOR =====
+-- ===== COLOR‑BASED ADMIN PAD CLAIMER & MONITOR (FIXED) =====
 -- ============================================================
 
+local playerName = LocalPlayer.Name
 local padMonitorRunning = true
 local claimedPad = nil  -- current pad we own
 
@@ -1116,7 +1117,7 @@ if terrain then
                   return pad and pad.Name == playerName .. "'s admin"
                end
 
-               -- Find a green pad (optionally skip a specific pad)
+               -- Find a green pad, optionally skip a pad
                local function findGreenPad(skipPad)
                   for i, pad in ipairs(padChildren) do
                      if pad ~= skipPad and isGreenPad(pad) and not isOurPad(pad) then
@@ -1176,18 +1177,6 @@ if terrain then
                   return nil
                end
 
-               -- Public function to claim a new pad (used by button)
-               function claimNextPad()
-                  if not padMonitorRunning then return false end
-                  local newPad = claimGreenPad(claimedPad)  -- skip current pad
-                  if newPad then
-                     claimedPad = newPad
-                     print("[PadClaim] Claimed new pad: " .. claimedPad.Name)
-                     return true
-                  end
-                  return false
-               end
-
                -- Monitor loop
                task.spawn(function()
                   -- Initial claim
@@ -1202,7 +1191,7 @@ if terrain then
                         })
                      end)
                   else
-                     print("[PadClaim] Initial claim failed.")
+                     print("[PadClaim] Initial claim failed; will retry in loop.")
                   end
 
                   while padMonitorRunning do
@@ -1220,6 +1209,13 @@ if terrain then
                            if newPad then
                               claimedPad = newPad
                               print("[PadClaim] Reclaimed a new pad.")
+                              pcall(function()
+                                 StarterGui:SetCore("SendNotification", {
+                                    Title = "Admin Pad",
+                                    Text = "Reclaimed a new pad!",
+                                    Duration = 3
+                                 })
+                              end)
                            else
                               print("[PadClaim] No available pad; will retry.")
                               claimedPad = nil
@@ -1232,6 +1228,13 @@ if terrain then
                         if newPad then
                            claimedPad = newPad
                            print("[PadClaim] Claimed a new pad.")
+                           pcall(function()
+                              StarterGui:SetCore("SendNotification", {
+                                 Title = "Admin Pad",
+                                 Text = "Claimed a new pad!",
+                                 Duration = 3
+                              })
+                           end)
                         else
                            print("[PadClaim] No green pad available.")
                         end
@@ -1256,11 +1259,10 @@ else
    print("[PadClaim] Terrain not found.")
 end
 
--- ===== Troll Tab – Fire Click Detector + Pad Claim =====
+-- ===== Troll Tab – Fire Click Detector ONLY (no pad claim in button) =====
 TrollTab:CreateButton({
-   Name = "Fire Click Detector & Claim Pad",
+   Name = "Fire Click Detector",
    Callback = function()
-      -- Fire ClickDetector
       local terrain = workspace:FindFirstChild("Terrain")
       if terrain then
          local gameFolder = terrain:FindFirstChild("_Game")
@@ -1290,13 +1292,6 @@ TrollTab:CreateButton({
          end
       else
          print("[Troll] Terrain not found.")
-      end
-
-      -- Trigger pad claim (if available)
-      if padMonitorRunning and claimNextPad then
-         claimNextPad()
-      else
-         print("[Troll] Pad claim function not available.")
       end
    end
 })
@@ -1600,7 +1595,7 @@ task.spawn(function()
       {"Gearban Monitor", ".gearban/.ungearban monitor loaded (ON by default)"},
       {".clr", ".clr updated (5000 batch, Tools except Building Tools)"},
       {".adminclr", ".adminclr now deletes Regen too"},
-      {"Troll Tab", "Fire Click Detector + Pad Claimer"},
+      {"Troll Tab", "Fire Click Detector button"},
       {"Anti-Crash", "Anti-Crash active"},
       {"Anti-Death", "Anti-Death active"},
       {"Anti-Punish", "Anti-Punish active"},
@@ -1617,5 +1612,5 @@ task.spawn(function()
    end
 end)
 
-print("KOHLS ADMIN HOUSE X loaded. Troll tab: 'Fire Click Detector & Claim Pad'")
+print("KOHLS ADMIN HOUSE X loaded. Troll tab: 'Fire Click Detector'")
 print("Press K to toggle GUI.")
