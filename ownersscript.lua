@@ -1,6 +1,9 @@
 -- ============================================
 -- KOHLS ADMIN HOUSE X – FINAL PUBLIC VERSION
--- Integrated .gearban monitor (with cooldown)
+-- All features: .afk, .unafk, .kick, .gearbanme (manual),
+-- .gearban (monitor start), .ungearban (stop), .listgear,
+-- .clr, .adminclr (deletes House, Obby Box, Obby, Baseplate, Grids, Regen),
+-- silent mode, killbrick immunity, anti‑punish/death/crash, jail monitor, ban system.
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -33,10 +36,10 @@ MiscTab:CreateToggle({
    end
 })
 
--- ===== Manual Gearban Toggle =====
+-- ===== Manual Gearban Toggle (.gearbanme) =====
 local gearbanEnabled = true
 CommandsTab:CreateToggle({
-   Name = "Gearban Command (.gearban)",
+   Name = "Manual Gearban (.gearbanme)",
    CurrentValue = true,
    Flag = "GearbanEnabled",
    Callback = function(v)
@@ -45,11 +48,11 @@ CommandsTab:CreateToggle({
    end
 })
 
--- ===== Gearban Monitor Toggle (NEW) =====
-local gearbanMonitorEnabled = false
+-- ===== Gearban Monitor Toggle (.gearban / .ungearban) =====
+local gearbanMonitorEnabled = true   -- ON by default
 CommandsTab:CreateToggle({
    Name = "Gearban Monitor (.gearban / .ungearban)",
-   CurrentValue = false,
+   CurrentValue = true,
    Flag = "GearbanMonitor",
    Callback = function(v)
       gearbanMonitorEnabled = v
@@ -86,8 +89,8 @@ local banMonitored = {}
 local banWasAbsent = {}
 
 -- Gearban monitor lists
-local gearbanMonitored = {}          -- usernames (exact case as typed)
-local gearbanLastSent = {}           -- cooldown per user
+local gearbanMonitored = {}
+local gearbanLastSent = {}
 
 local lastActionTime = {}
 local punishDisappearTime = {}
@@ -187,7 +190,7 @@ local function gearbanCheckBackpack(username)
    end
 end
 
--- Gearban monitor loop (runs every 1s when enabled)
+-- Gearban monitor loop (runs every 1s)
 task.spawn(function()
    while true do
       task.wait(1)
@@ -357,10 +360,10 @@ local function KickPlayer(target)
    afkRunning = false
 end
 
--- ===== Manual .gearban (with notification) =====
-local function Gearban(target)
+-- ===== Manual .gearbanme (with notification) =====
+local function GearbanManual(target)
    if not gearbanEnabled then
-      print("[Gearban] Command disabled.")
+      print("[Gearban] Manual command disabled.")
       return
    end
    if afkRunning then return end
@@ -451,7 +454,7 @@ local function removeByName(names)
    end
 end
 
--- ===== .adminclr =====
+-- ===== .adminclr (now deletes Regen too) =====
 local function adminClear()
    local endpoint = getSyncAPI()
    if not endpoint then
@@ -459,7 +462,7 @@ local function adminClear()
       return
    end
 
-   local targetNames = {"House", "Obby Box", "Obby", "Baseplate", "Grids"}
+   local targetNames = {"House", "Obby Box", "Obby", "Baseplate", "Grids", "Regen"}
    local instances = {}
    for _, v in pairs(workspace:GetDescendants()) do
       if v:IsA("Model") or v:IsA("BasePart") then
@@ -520,7 +523,7 @@ task.spawn(function()
    end
 end)
 
--- ===== Ban monitoring (every 1.5s) – uses KickPlayer =====
+-- ===== Ban monitoring (every 1.5s) =====
 task.spawn(function()
    while true do
       task.wait(1.5)
@@ -828,13 +831,13 @@ MiscTab:CreateButton({
       task.wait(0.1)
       notify(".kick", ".kick loaded (uses executor's name)")
       task.wait(0.1)
-      notify(".gearban", ".gearban manual loaded")
+      notify(".gearbanme", ".gearbanme manual loaded")
       task.wait(0.1)
-      notify(".gearban monitor", ".gearban/.ungearban monitor loaded (toggle in Commands)")
+      notify(".gearban monitor", ".gearban/.ungearban monitor loaded (ON by default)")
       task.wait(0.1)
       notify(".clr", ".clr updated (5000 batch, Tools except Building Tools)")
       task.wait(0.1)
-      notify(".adminclr", ".adminclr loaded (House, Obby Box, Obby, Baseplate, Grids)")
+      notify(".adminclr", ".adminclr now deletes Regen too")
       task.wait(0.1)
       notify("Anti-Crash", "Anti-Crash active")
       task.wait(0.1)
@@ -862,10 +865,10 @@ MiscTab:CreateButton({
       print(".afk <user> – freeze, god, ff")
       print(".unafk <user> – reset")
       print(".kick <user> – gear <executor> potato (3x), give <executor> potato (4x), bring, freeze, size nan")
-      print(".gearban <user> – manual gearban (portable, unff, ungod, speed 0)")
+      print(".gearbanme <user> – manual gearban (portable, unff, ungod, speed 0)")
       print("Gearban Monitor: .gearban <user> (start), .ungearban <user> (stop), .listgear")
       print(".clr – delete all Tools (except Building Tools), Part, Truss, Seat, SubspaceTripmine, and models named 'Model' (5000 batch)")
-      print(".adminclr – delete House, Obby Box, Obby, Baseplate, Grids (game respawns them)")
+      print(".adminclr – delete House, Obby Box, Obby, Baseplate, Grids, Regen (game respawns them)")
       print(".stopclr – stop ongoing .clr")
       print(".anticrash <user> – monitor anchored (use 'all' for everyone)")
       print(".unanticrash <user> – stop monitoring")
@@ -1073,12 +1076,17 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
          task.spawn(KickPlayer, target)
          if silentMode then return nil end
 
-      -- Manual .gearban (with notification)
+      -- .gearbanme (manual gearban)
+      elseif string.sub(msg, 1, 10) == ".gearbanme " then
+         local rest = string.sub(msg, 11)
+         target = (string.len(rest) > 0 and string.sub(rest, 1, 1) == " ") and string.sub(rest, 2) or rest
+         if target == "" then target = "me" end
+         task.spawn(GearbanManual, target)
+         if silentMode then return nil end
+
+      -- .gearban (monitor start) – only if monitor toggle is ON
       elseif string.sub(msg, 1, 9) == ".gearban " then
-         -- First, check if it's the monitor version (we'll detect by context? We can't, so we use the toggle)
-         -- If the monitor toggle is ON, we treat it as the monitor command, otherwise as the manual command.
          if gearbanMonitorEnabled then
-            -- Monitor version: start monitoring
             target = string.sub(args[1], 10)
             target = target:gsub("^%s+", ""):gsub("%s+$", "")
             if target ~= "" then
@@ -1086,15 +1094,10 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             else
                print("[Gearban Monitor] Please specify a username.")
             end
-            if silentMode then return nil end
          else
-            -- Manual version (original)
-            local rest = string.sub(msg, 10)
-            target = (string.len(rest) > 0 and string.sub(rest, 1, 1) == " ") and string.sub(rest, 2) or rest
-            if target == "" then target = "me" end
-            task.spawn(Gearban, target)
-            if silentMode then return nil end
+            print("[Gearban Monitor] Disabled. Enable the toggle first.")
          end
+         if silentMode then return nil end
 
       -- .ungearban (stop monitoring)
       elseif string.sub(msg, 1, 11) == ".ungearban " then
@@ -1106,13 +1109,12 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             else
                print("[Gearban Monitor] Please specify a username.")
             end
-            if silentMode then return nil end
          else
             print("[Gearban Monitor] Disabled. Enable the toggle first.")
-            if silentMode then return nil end
          end
+         if silentMode then return nil end
 
-      -- .listgear (show monitored users)
+      -- .listgear
       elseif msg == ".listgear" then
          if gearbanMonitorEnabled then
             if #gearbanMonitored == 0 then
@@ -1123,11 +1125,10 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                   print(" - " .. name)
                end
             end
-            if silentMode then return nil end
          else
             print("[Gearban Monitor] Disabled. Enable the toggle first.")
-            if silentMode then return nil end
          end
+         if silentMode then return nil end
 
       -- .clr
       elseif msg == ".clr" then
@@ -1324,10 +1325,10 @@ task.spawn(function()
       {"KOHLS ADMIN HOUSE X", "Public version loaded!"},
       {".afk", ".afk loaded"},
       {".kick", ".kick loaded (uses executor's name)"},
-      {".gearban", ".gearban manual loaded"},
-      {"Gearban Monitor", ".gearban/.ungearban monitor loaded – enable toggle in Commands"},
+      {".gearbanme", ".gearbanme manual loaded"},
+      {"Gearban Monitor", ".gearban/.ungearban monitor loaded (ON by default)"},
       {".clr", ".clr updated (5000 batch, Tools except Building Tools)"},
-      {".adminclr", ".adminclr loaded (House, Obby Box, Obby, Baseplate, Grids)"},
+      {".adminclr", ".adminclr now deletes Regen too"},
       {"Anti-Crash", "Anti-Crash active"},
       {"Anti-Death", "Anti-Death active"},
       {"Anti-Punish", "Anti-Punish active"},
@@ -1343,5 +1344,5 @@ task.spawn(function()
    end
 end)
 
-print("KOHLS ADMIN HOUSE X loaded. Gearban monitor integrated (toggle in Commands).")
+print("KOHLS ADMIN HOUSE X loaded. .gearban = monitor, .gearbanme = manual.")
 print("Press K to toggle GUI.")
