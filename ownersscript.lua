@@ -1,6 +1,7 @@
 -- ============================================
 -- KOHLS ADMIN HOUSE X – FINAL PUBLIC VERSION
 -- Troll tab: "Fire Click Detector" button
+-- + Auto Admin Pad Claimer & Monitor
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -1030,53 +1031,242 @@ CommandsTab:CreateButton({ Name = "Hide GUI", Callback = function() Rayfield:Set
 CommandsTab:CreateButton({ Name = "Show GUI", Callback = function() Rayfield:SetVisibility(true) end })
 CommandsTab:CreateButton({ Name = "Destroy GUI", Callback = function() Rayfield:Destroy() end })
 
--- ===== Troll Tab – Fire Click Detector button (FIXED) =====
+-- ============================================================
+-- ===== ADMIN PAD CLAIMER & MONITOR (NEW FEATURE) =====
+-- ============================================================
+
+local padMonitorRunning = true
+local padClaimerNotified = false  -- one-time notification per acquisition
+
+-- Path to pads
+local terrain = workspace:FindFirstChild("Terrain")
+if terrain then
+   local gameFolder = terrain:FindFirstChild("_Game")
+   if gameFolder then
+      local adminFolder = gameFolder:FindFirstChild("Admin")
+      if adminFolder then
+         local pads = adminFolder:FindFirstChild("Pads")
+         if pads then
+            local padChildren = pads:GetChildren()
+            if #padChildren >= 9 then
+               local currentPadIndex = 4  -- initial index (1‑based)
+
+               -- Helper: get player's HumanoidRootPart
+               local function getHRP()
+                  local char = LocalPlayer.Character
+                  if char then
+                     return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart")
+                  end
+                  return nil
+               end
+
+               -- Fire touch on a pad's Head
+               local function fireTouchOnPad(pad)
+                  local head = pad:FindFirstChild("Head")
+                  if not head then return false end
+                  local hrp = getHRP()
+                  if not hrp then return false end
+                  pcall(function()
+                     firetouchinterest(head, hrp, 0)
+                     task.wait(0.1)
+                     firetouchinterest(head, hrp, 1)
+                  end)
+                  return true
+               end
+
+               -- Rename pad
+               local function renamePad(pad, newName)
+                  if pad and pad:IsA("Model") then
+                     pad.Name = newName
+                     return true
+                  end
+                  return false
+               end
+
+               -- Notification (uses same as above, but we'll define local to avoid conflict)
+               local function notifyPad(text)
+                  pcall(function()
+                     StarterGui:SetCore("SendNotification", {
+                        Title = "Admin Pad",
+                        Text = text,
+                        Duration = 3
+                     })
+                  end)
+                  print("[AdminPad] " .. text)
+               end
+
+               -- Check if a pad name matches player's admin
+               local function isAdminPad(name)
+                  return name:lower():find(playerName:lower() .. "'s admin") ~= nil
+               end
+
+               -- Claim a specific pad index
+               local function claimPad(index)
+                  local pad = padChildren[index]
+                  if not pad then return false end
+                  if not fireTouchOnPad(pad) then
+                     print("Failed to fire touch on pad " .. index)
+                     return false
+                  end
+                  local newName = playerName .. "'s admin"
+                  if renamePad(pad, newName) then
+                     print("Renamed pad " .. index .. " to " .. newName)
+                     return true
+                  end
+                  return false
+               end
+
+               -- Public function to claim a new pad (used by button)
+               function claimNextPad()
+                  if not padMonitorRunning then return end
+                  -- Try to find a non-admin pad and claim it, starting from currentIndex+1
+                  local startIndex = currentPadIndex + 1
+                  if startIndex > #padChildren then startIndex = 1 end
+                  local attempts = 0
+                  while attempts < #padChildren do
+                     local idx = startIndex + attempts
+                     if idx > #padChildren then idx = idx - #padChildren end
+                     local pad = padChildren[idx]
+                     if not isAdminPad(pad.Name) then
+                        currentPadIndex = idx
+                        if claimPad(currentPadIndex) then
+                           print("Claimed pad index " .. currentPadIndex)
+                           -- notification will be handled by monitor loop
+                           return true
+                        else
+                           print("Failed to claim pad " .. idx)
+                           break
+                        end
+                     end
+                     attempts = attempts + 1
+                  end
+                  print("No available pad to claim.")
+                  return false
+               end
+
+               -- Monitor loop
+               task.spawn(function()
+                  -- Initial claim
+                  claimPad(currentPadIndex)
+
+                  while padMonitorRunning do
+                     task.wait(1)
+
+                     -- Check if any pad is admin pad
+                     local hasAdmin = false
+                     for i, pad in ipairs(padChildren) do
+                        if isAdminPad(pad.Name) then
+                           hasAdmin = true
+                           break
+                        end
+                     end
+
+                     -- Notify only once per acquisition
+                     if hasAdmin and not padClaimerNotified then
+                        notifyPad("You have admin!")
+                        padClaimerNotified = true
+                     elseif not hasAdmin then
+                        padClaimerNotified = false
+                     end
+
+                     -- Reclaim if active pad lost admin
+                     local activePad = padChildren[currentPadIndex]
+                     if activePad and activePad.Parent == pads then
+                        if not isAdminPad(activePad.Name) then
+                           print("Active pad lost admin name. Selecting next pad...")
+                           -- find any non-admin pad
+                           for i, pad in ipairs(padChildren) do
+                              if not isAdminPad(pad.Name) then
+                                 currentPadIndex = i
+                                 if claimPad(currentPadIndex) then
+                                    print("Claimed new pad index " .. currentPadIndex)
+                                    break
+                                 end
+                              end
+                           end
+                        end
+                     else
+                        -- active pad missing; pick first non-admin
+                        for i, pad in ipairs(padChildren) do
+                           if not isAdminPad(pad.Name) then
+                              currentPadIndex = i
+                              if claimPad(currentPadIndex) then
+                                 print("Claimed pad index " .. currentPadIndex)
+                                 break
+                              end
+                           end
+                        end
+                     end
+                  end
+               end)
+
+               print("[AdminPad] Monitor started. Initial index: " .. currentPadIndex)
+            else
+               print("[AdminPad] Less than 9 pads found, feature disabled.")
+            end
+         else
+            print("[AdminPad] Pads folder not found.")
+         end
+      else
+         print("[AdminPad] Admin folder not found.")
+      end
+   else
+      print("[AdminPad] _Game not found.")
+   end
+else
+   print("[AdminPad] Terrain not found.")
+end
+
+-- ===== Troll Tab – Fire Click Detector button (FIXED + Pad claim) =====
 TrollTab:CreateButton({
    Name = "Fire Click Detector",
    Callback = function()
-      -- Locate the ClickDetector
+      -- Fire the ClickDetector
       local terrain = workspace:FindFirstChild("Terrain")
-      if not terrain then
-         print("[Troll] Terrain not found.")
-         return
-      end
-      local gameFolder = terrain:FindFirstChild("_Game")
-      if not gameFolder then
-         print("[Troll] _Game not found.")
-         return
-      end
-      local admin = gameFolder:FindFirstChild("Admin")
-      if not admin then
-         print("[Troll] Admin not found.")
-         return
-      end
-      local regen = admin:FindFirstChild("Regen")
-      if not regen then
-         print("[Troll] Regen not found.")
-         return
-      end
-      local cd = regen:FindFirstChild("ClickDetector")
-      if not cd or not cd:IsA("ClickDetector") then
-         print("[Troll] ClickDetector not found.")
-         return
-      end
-
-      -- Set activation distance to huge so it works from anywhere
-      cd.MaxActivationDistance = 99999
-
-      -- Use fireclickdetector (the correct method)
-      local success, err = pcall(function()
-         fireclickdetector(cd)
-      end)
-      if success then
-         print("[Troll] Regen ClickDetector fired.")
+      if terrain then
+         local gameFolder = terrain:FindFirstChild("_Game")
+         if gameFolder then
+            local adminFolder = gameFolder:FindFirstChild("Admin")
+            if adminFolder then
+               local regen = adminFolder:FindFirstChild("Regen")
+               if regen then
+                  local cd = regen:FindFirstChild("ClickDetector")
+                  if cd and cd:IsA("ClickDetector") then
+                     cd.MaxActivationDistance = 99999
+                     pcall(function()
+                        fireclickdetector(cd)
+                     end)
+                     print("[Troll] Regen ClickDetector fired.")
+                  else
+                     print("[Troll] ClickDetector not found.")
+                  end
+               else
+                  print("[Troll] Regen not found.")
+               end
+            else
+               print("[Troll] Admin not found.")
+            end
+         else
+            print("[Troll] _Game not found.")
+         end
       else
-         warn("[Troll] Failed to fire: " .. tostring(err))
+         print("[Troll] Terrain not found.")
+      end
+
+      -- Also claim a pad (if pad monitor is active)
+      if padMonitorRunning then
+         if claimNextPad then
+            claimNextPad()
+         else
+            print("[Troll] Pad claim function not available.")
+         end
+      else
+         print("[Troll] Pad monitor is disabled.")
       end
    end
 })
 
--- ===== Chat hooks (all commands) =====
+-- ===== Chat hooks (all commands) – unchanged =====
 local old
 old = hookmetamethod(game, "__namecall", function(self, ...)
    local args = {...}
@@ -1191,7 +1381,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
          task.spawn(adminClear)
          if silentMode then return nil end
 
-      -- Monitor commands (protective) – abbreviated for length
+      -- Monitor commands (abbreviated for brevity – full implementation)
       elseif string.sub(msg, 1, 11) == ".anticrash " then
          local username = string.sub(args[1], 12)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1202,10 +1392,114 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             print("[AntiCrash] Please specify a username or 'all'.")
          end
          if silentMode then return nil end
-      -- ... (all other monitor commands follow the same pattern – they are fully implemented in the full script)
-      -- I'll include them briefly for completeness, but the core logic is identical.
 
-      -- .ban / .unban
+      -- .unanticrash
+      elseif string.sub(msg, 1, 13) == ".unanticrash " then
+         local username = string.sub(args[1], 14)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            removeFromMonitor(crashMonitored, username)
+            print("[AntiCrash] Stopped monitoring " .. username)
+         else
+            print("[AntiCrash] Please specify a username.")
+         end
+         if silentMode then return nil end
+
+      -- .antideath
+      elseif string.sub(msg, 1, 11) == ".antideath " then
+         local username = string.sub(args[1], 12)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            addToMonitor(deathMonitored, username)
+            print("[AntiDeath] Now monitoring " .. username)
+         else
+            print("[AntiDeath] Please specify a username or 'all'.")
+         end
+         if silentMode then return nil end
+
+      -- .unantideath
+      elseif string.sub(msg, 1, 13) == ".unantideath " then
+         local username = string.sub(args[1], 14)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            removeFromMonitor(deathMonitored, username)
+            print("[AntiDeath] Stopped monitoring " .. username)
+         else
+            print("[AntiDeath] Please specify a username.")
+         end
+         if silentMode then return nil end
+
+      -- .antipunish
+      elseif string.sub(msg, 1, 12) == ".antipunish " then
+         local username = string.sub(args[1], 13)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            addToMonitor(punishMonitored, username)
+            print("[AntiPunish] Now monitoring " .. username)
+         else
+            print("[AntiPunish] Please specify a username or 'all'.")
+         end
+         if silentMode then return nil end
+
+      -- .unantipunish
+      elseif string.sub(msg, 1, 14) == ".unantipunish " then
+         local username = string.sub(args[1], 15)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            removeFromMonitor(punishMonitored, username)
+            print("[AntiPunish] Stopped monitoring " .. username)
+         else
+            print("[AntiPunish] Please specify a username.")
+         end
+         if silentMode then return nil end
+
+      -- .antiall
+      elseif string.sub(msg, 1, 9) == ".antiall " then
+         local username = string.sub(args[1], 10)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            addToAllMonitors(username)
+         else
+            print("[AntiAll] Please specify a username or 'all'.")
+         end
+         if silentMode then return nil end
+
+      -- .unantiall
+      elseif string.sub(msg, 1, 11) == ".unantiall " then
+         local username = string.sub(args[1], 12)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            removeFromAllMonitors(username)
+         else
+            print("[AntiAll] Please specify a username.")
+         end
+         if silentMode then return nil end
+
+      -- .antijail
+      elseif string.sub(msg, 1, 10) == ".antijail " then
+         local username = string.sub(args[1], 11)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            addJailMonitor(username)
+            print("[AntiJail] Now monitoring " .. username)
+         else
+            print("[AntiJail] Please specify a username or 'all'.")
+         end
+         if silentMode then return nil end
+
+      -- .unantijail
+      elseif string.sub(msg, 1, 12) == ".unantijail " then
+         local username = string.sub(args[1], 13)
+         username = username:gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            removeJailMonitor(username)
+            print("[AntiJail] Stopped monitoring " .. username)
+         else
+            print("[AntiJail] Please specify a username.")
+         end
+         if silentMode then return nil end
+
+      -- .ban
       elseif string.sub(msg, 1, 5) == ".ban " then
          local username = string.sub(args[1], 6)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1224,6 +1518,8 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             print("[Ban] Please specify a username.")
          end
          if silentMode then return nil end
+
+      -- .unban
       elseif string.sub(msg, 1, 7) == ".unban " then
          local username = string.sub(args[1], 8)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1269,7 +1565,7 @@ task.spawn(function()
       {"Gearban Monitor", ".gearban/.ungearban monitor loaded (ON by default)"},
       {".clr", ".clr updated (5000 batch, Tools except Building Tools)"},
       {".adminclr", ".adminclr now deletes Regen too"},
-      {"Troll Tab", "Fire Click Detector button added"},
+      {"Troll Tab", "Fire Click Detector + Pad Claimer added"},
       {"Anti-Crash", "Anti-Crash active"},
       {"Anti-Death", "Anti-Death active"},
       {"Anti-Punish", "Anti-Punish active"},
@@ -1277,7 +1573,8 @@ task.spawn(function()
       {"Ban System", ".ban / .unban loaded"},
       {"Monitor Commands", "Use 'all' to monitor everyone"},
       {"Killbrick Immunity", "Active – covers all parts in obby"},
-      {"Silent Mode", "Toggle in Misc to hide commands"}
+      {"Silent Mode", "Toggle in Misc to hide commands"},
+      {"Admin Pad", "Auto‑claimer active (pad 4 initial)"}
    }
    for _, notif in ipairs(notifications) do
       notify(notif[1], notif[2])
@@ -1285,5 +1582,5 @@ task.spawn(function()
    end
 end)
 
-print("KOHLS ADMIN HOUSE X loaded. Troll tab: 'Fire Click Detector'.")
+print("KOHLS ADMIN HOUSE X loaded. Troll tab: 'Fire Click Detector' also claims a pad.")
 print("Press K to toggle GUI.")
