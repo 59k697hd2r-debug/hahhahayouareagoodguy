@@ -5,6 +5,7 @@
 -- + Color‑based Admin Pad Claimer (claims ONE pad)
 -- + Troll tab: Fire Click Detector (no cooldown)
 -- + .workspaceclr – deletes EVERYTHING in workspace (via SyncAPI)
+-- + Loaders tab: Novoline & Infinite Yield buttons
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -25,6 +26,7 @@ local Window = Rayfield:CreateWindow({
 local CommandsTab = Window:CreateTab("Commands", 4483362458)
 local MiscTab = Window:CreateTab("Misc", 4483362458)
 local TrollTab = Window:CreateTab("Troll", 4483362458)
+local LoadersTab = Window:CreateTab("Loaders (novo etc)", 4483362458)
 
 -- ===== Silent Commands Toggle =====
 local silentMode = false
@@ -1148,6 +1150,24 @@ CommandsTab:CreateButton({ Name = "Show GUI", Callback = function() Rayfield:Set
 CommandsTab:CreateButton({ Name = "Destroy GUI", Callback = function() Rayfield:Destroy() end })
 
 -- ============================================================
+-- ===== LOADERS TAB – Novoline & Infinite Yield =====
+-- ============================================================
+
+LoadersTab:CreateButton({
+   Name = "Novoline",
+   Callback = function()
+      loadstring(game:HttpGet("https://novoline.pro/"))()
+   end
+})
+
+LoadersTab:CreateButton({
+   Name = "Infinite Yield",
+   Callback = function()
+      loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))()
+   end
+})
+
+-- ============================================================
 -- ===== COLOR‑BASED ADMIN PAD CLAIMER & MONITOR =====
 -- Claims ONE pad, monitors it, and reclaims only when lost.
 -- ============================================================
@@ -1703,7 +1723,8 @@ task.spawn(function()
       {"Monitor Commands", "Use 'all' to monitor everyone"},
       {"Killbrick Immunity", "Active – covers all parts in obby"},
       {"Silent Mode", "Toggle in Misc to hide commands"},
-      {"Admin Pad", "Claims ONE pad and monitors it"}
+      {"Admin Pad", "Claims ONE pad and monitors it"},
+      {"Loaders Tab", "Novoline & Infinite Yield buttons added"}
    }
    for _, notif in ipairs(notifications) do
       notify(notif[1], notif[2])
@@ -1714,4 +1735,5 @@ end)
 print("KOHLS ADMIN HOUSE X loaded. Troll tab: 'Fire Click Detector' (instant)")
 print("Type .workspaceclr to delete everything in workspace.")
 print("All commands support partial display name matching.")
+print("Loaders tab: Novoline & Infinite Yield.")
 print("Press K to toggle GUI.")
