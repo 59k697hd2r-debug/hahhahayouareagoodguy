@@ -1,6 +1,6 @@
 -- ============================================
 -- KOHLS ADMIN HOUSE X – FINAL PUBLIC VERSION
--- Fixed .adminclr (deletes all targets) + .gearban notification
+-- Integrated working .adminclr, proper silent handling
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -94,7 +94,7 @@ local deathRecently = false
 local jailAllCooldown = 0
 local jailAllCooldownTime = 1.0
 
--- ===== Helper: send message =====
+-- ===== Helper: send message (respects silent mode) =====
 local function sendMessage(msg, channel)
    if silentMode then
       channel = "System"
@@ -110,6 +110,38 @@ local function findPlayer(username)
    for _, plr in ipairs(Players:GetPlayers()) do
       if plr.Name:lower() == username:lower() then
          return plr
+      end
+   end
+   return nil
+end
+
+-- ===== getSyncAPI (shared) =====
+local function getSyncAPI()
+   local char = LocalPlayer.Character
+   if char then
+      local bt = char:FindFirstChild("Building Tools")
+      if bt then
+         local sync = bt:FindFirstChild("SyncAPI")
+         if sync then
+            local ep = sync:FindFirstChild("ServerEndpoint")
+            if ep then return ep end
+         end
+      end
+   end
+   local bp = LocalPlayer.Backpack
+   if bp then
+      local bt = bp:FindFirstChild("Building Tools")
+      if bt then
+         local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+         if humanoid then
+            humanoid:EquipTool(bt)
+            task.wait(0.1)
+         end
+         local sync = bt:FindFirstChild("SyncAPI")
+         if sync then
+            local ep = sync:FindFirstChild("ServerEndpoint")
+            if ep then return ep end
+         end
       end
    end
    return nil
@@ -280,37 +312,6 @@ local function Gearban(target)
 end
 
 -- ===== .clr =====
-local function getSyncAPI()
-   local char = LocalPlayer.Character
-   if char then
-      local bt = char:FindFirstChild("Building Tools")
-      if bt then
-         local sync = bt:FindFirstChild("SyncAPI")
-         if sync then
-            local ep = sync:FindFirstChild("ServerEndpoint")
-            if ep then return ep end
-         end
-      end
-   end
-   local bp = LocalPlayer.Backpack
-   if bp then
-      local bt = bp:FindFirstChild("Building Tools")
-      if bt then
-         local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-         if humanoid then
-            humanoid:EquipTool(bt)
-            task.wait(0.1)
-         end
-         local sync = bt:FindFirstChild("SyncAPI")
-         if sync then
-            local ep = sync:FindFirstChild("ServerEndpoint")
-            if ep then return ep end
-         end
-      end
-   end
-   return nil
-end
-
 local function removeByName(names)
    if not clrEnabled then
       print("[.clr] Command disabled.")
@@ -372,7 +373,7 @@ local function removeByName(names)
    end
 end
 
--- ===== .adminclr (FIXED – deletes Models and BaseParts) =====
+-- ===== .adminclr (working version) =====
 local function adminClear()
    local endpoint = getSyncAPI()
    if not endpoint then
@@ -380,11 +381,11 @@ local function adminClear()
       return
    end
 
-   local targets = {"House", "Obby Box", "Obby", "Baseplate", "Grids"}
+   local targetNames = {"House", "Obby Box", "Obby", "Baseplate", "Grids"}
    local instances = {}
    for _, v in pairs(workspace:GetDescendants()) do
       if v:IsA("Model") or v:IsA("BasePart") then
-         for _, name in ipairs(targets) do
+         for _, name in ipairs(targetNames) do
             if v.Name == name then
                table.insert(instances, v)
                break
@@ -945,7 +946,7 @@ CommandsTab:CreateButton({ Name = "Hide GUI", Callback = function() Rayfield:Set
 CommandsTab:CreateButton({ Name = "Show GUI", Callback = function() Rayfield:SetVisibility(true) end })
 CommandsTab:CreateButton({ Name = "Destroy GUI", Callback = function() Rayfield:Destroy() end })
 
--- ===== Chat hooks =====
+-- ===== Chat hooks (all commands respect silentMode) =====
 local old
 old = hookmetamethod(game, "__namecall", function(self, ...)
    local args = {...}
@@ -1194,9 +1195,9 @@ task.spawn(function()
       {"KOHLS ADMIN HOUSE X", "Public version loaded!"},
       {".afk", ".afk loaded"},
       {".kick", ".kick loaded"},
-      {".gearban", ".gearban loaded (now notifies & includes unff/ungod)"},
+      {".gearban", ".gearban loaded"},
       {".clr", ".clr updated (5000 batch, Tools except Building Tools)"},
-      {".adminclr", ".adminclr now deletes House, Obby Box, Obby, Baseplate, Grids"},
+      {".adminclr", ".adminclr loaded – deletes House, Obby Box, Obby, Baseplate, Grids"},
       {"Anti-Crash", "Anti-Crash active"},
       {"Anti-Death", "Anti-Death active"},
       {"Anti-Punish", "Anti-Punish active"},
@@ -1212,5 +1213,5 @@ task.spawn(function()
    end
 end)
 
-print("KOHLS ADMIN HOUSE X loaded. .adminclr now removes Grids too.")
+print("KOHLS ADMIN HOUSE X loaded. .adminclr now works reliably, silent mode fixed.")
 print("Press K to toggle GUI.")
