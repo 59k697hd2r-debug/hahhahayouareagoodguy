@@ -5,7 +5,7 @@
 -- + Color‑based Admin Pad Claimer (claims ONE pad)
 -- + Troll tab: Fire Click Detector (no cooldown)
 -- + .workspaceclr – deletes EVERYTHING in workspace (via SyncAPI)
--- + Loaders tab: Novoline & Infinite Yield buttons
+-- + Loaders tab: Novoline, Infinite Yield, Explorer++, Cobalt Spy
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -1150,7 +1150,7 @@ CommandsTab:CreateButton({ Name = "Show GUI", Callback = function() Rayfield:Set
 CommandsTab:CreateButton({ Name = "Destroy GUI", Callback = function() Rayfield:Destroy() end })
 
 -- ============================================================
--- ===== LOADERS TAB – Novoline & Infinite Yield =====
+-- ===== LOADERS TAB – Novoline, Infinite Yield, Explorer++, Cobalt Spy =====
 -- ============================================================
 
 LoadersTab:CreateButton({
@@ -1164,6 +1164,20 @@ LoadersTab:CreateButton({
    Name = "Infinite Yield",
    Callback = function()
       loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))()
+   end
+})
+
+LoadersTab:CreateButton({
+   Name = "Explorer ++",
+   Callback = function()
+      loadstring(game:HttpGet("https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua"))()
+   end
+})
+
+LoadersTab:CreateButton({
+   Name = "Cobalt Spy",
+   Callback = function()
+      loadstring(game:HttpGet("https://github.com/notpoiu/cobalt/releases/latest/download/Cobalt.luau"))()
    end
 })
 
@@ -1724,7 +1738,7 @@ task.spawn(function()
       {"Killbrick Immunity", "Active – covers all parts in obby"},
       {"Silent Mode", "Toggle in Misc to hide commands"},
       {"Admin Pad", "Claims ONE pad and monitors it"},
-      {"Loaders Tab", "Novoline & Infinite Yield buttons added"}
+      {"Loaders Tab", "Novoline, Infinite Yield, Explorer++, Cobalt Spy added"}
    }
    for _, notif in ipairs(notifications) do
       notify(notif[1], notif[2])
@@ -1735,5 +1749,5 @@ end)
 print("KOHLS ADMIN HOUSE X loaded. Troll tab: 'Fire Click Detector' (instant)")
 print("Type .workspaceclr to delete everything in workspace.")
 print("All commands support partial display name matching.")
-print("Loaders tab: Novoline & Infinite Yield.")
+print("Loaders tab: Novoline, Infinite Yield, Explorer++, Cobalt Spy.")
 print("Press K to toggle GUI.")
