@@ -6,7 +6,7 @@
 -- + Troll tab: Fire Click Detector (no cooldown)
 -- + .workspaceclr – deletes EVERYTHING in workspace (via SyncAPI)
 -- + .trollclr – unanchor & disable collision for all Parts/Trusses/Seats
--- + .clr – now deletes ALL BaseParts (except Baseplate) plus Tools (except Building Tools) and Models named "Model"
+-- + .clr – deletes ALL BaseParts (except Baseplate) + Tools (except Building Tools) + Models named "Model"
 -- + Loaders tab: Novoline, Infinite Yield, Explorer++, Cobalt Spy
 -- ============================================
 
@@ -484,6 +484,13 @@ local function clearAll()
 
    if #instances == 0 then
       print("[.clr] No matching instances found.")
+      pcall(function()
+         StarterGui:SetCore("SendNotification", {
+            Title = ".clr",
+            Text = "No instances to delete.",
+            Duration = 3
+         })
+      end)
       return
    end
 
@@ -510,6 +517,13 @@ local function clearAll()
       print("[.clr] Halted. Removed " .. total .. " so far.")
    else
       print("[.clr] Removed " .. total .. " instances.")
+      pcall(function()
+         StarterGui:SetCore("SendNotification", {
+            Title = ".clr",
+            Text = "Removed " .. total .. " parts/tools/models.",
+            Duration = 3
+         })
+      end)
    end
 end
 
@@ -646,6 +660,7 @@ local function trollClear()
 
    print("[.trollclr] Found " .. #anchorList .. " parts to unanchor and disable collision.")
 
+   -- Send SyncAnchor (unanchor)
    local success, err = pcall(function()
       endpoint:InvokeServer("SyncAnchor", anchorList)
    end)
@@ -653,6 +668,7 @@ local function trollClear()
       warn("[.trollclr] SyncAnchor failed: " .. tostring(err))
    end
 
+   -- Send SyncCollision (disable collision)
    success, err = pcall(function()
       endpoint:InvokeServer("SyncCollision", collisionList)
    end)
