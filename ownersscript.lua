@@ -5,8 +5,8 @@
 -- + Color‑based Admin Pad Claimer (claims ONE pad)
 -- + Troll tab: Fire Click Detector (no cooldown)
 -- + .workspaceclr – deletes EVERYTHING in workspace (via SyncAPI)
--- + .trollclr – unanchor & disable collision for all Parts/Trusses/Seats
--- + .clr – deletes ALL BaseParts (except Baseplate) + Tools (except Building Tools) + Models named "Model"
+-- + .trollclr – unanchor & disable collision for all Parts/Trusses/Seats (batched 2500)
+-- + .clr – deletes ALL BaseParts (except Baseplate) + Tools (except Building Tools) + Models named "Model" (fixed using same method as adminclr)
 -- + Loaders tab: Novoline, Infinite Yield, Explorer++, Cobalt Spy
 -- ============================================
 
@@ -131,8 +131,7 @@ local function sendMessage(msg, channel)
    print("[Chat] (" .. channel .. ") " .. msg)
 end
 
--- ===== NEW: Partial matcher by display name =====
--- Returns: player object, or "all" marker, or nil if not found.
+-- ===== Partial matcher by display name =====
 local function resolveTarget(partial)
    if not partial or partial == "" then return nil end
    partial = string.lower(partial)
@@ -152,7 +151,6 @@ local function resolveTarget(partial)
       print("[PartialMatcher] Multiple matches for '" .. partial .. "', using first: " .. matches[1].Name)
       return matches[1]
    end
-   -- Fallback: exact username match (case-insensitive)
    for _, plr in ipairs(Players:GetPlayers()) do
       if string.lower(plr.Name) == partial then
          return plr
@@ -216,7 +214,6 @@ local function gearbanCheckBackpack(username)
    end
 end
 
--- Gearban monitor loop (runs every 1s)
 task.spawn(function()
    while true do
       task.wait(1)
@@ -228,19 +225,12 @@ task.spawn(function()
    end
 end)
 
--- Add/remove gearban monitor helpers
 local function addGearbanMonitor(username)
    local target = resolveTarget(username)
-   if not target or target == "all" then
-      print("[Gearban Monitor] Invalid target.")
-      return false
-   end
+   if not target or target == "all" then return false end
    local name = target.Name
    for _, n in ipairs(gearbanMonitored) do
-      if n:lower() == name:lower() then
-         print("[Gearban Monitor] Already monitoring " .. name)
-         return false
-      end
+      if n:lower() == name:lower() then return false end
    end
    table.insert(gearbanMonitored, name)
    print("[Gearban Monitor] Now monitoring " .. name)
@@ -249,10 +239,7 @@ end
 
 local function removeGearbanMonitor(username)
    local target = resolveTarget(username)
-   if not target or target == "all" then
-      print("[Gearban Monitor] Invalid target.")
-      return false
-   end
+   if not target or target == "all" then return false end
    local name = target.Name
    for i, n in ipairs(gearbanMonitored) do
       if n:lower() == name:lower() then
@@ -262,7 +249,6 @@ local function removeGearbanMonitor(username)
          return true
       end
    end
-   print("[Gearban Monitor] " .. name .. " not being monitored.")
    return false
 end
 
@@ -286,7 +272,7 @@ task.spawn(function()
    end
 end)
 
--- ===== Self Anti‑Punish (skip if death recently) =====
+-- ===== Self Anti‑Punish =====
 task.spawn(function()
    while true do
       task.wait(0.2)
@@ -413,7 +399,7 @@ local function KickPlayer(target)
    afkRunning = false
 end
 
--- ===== Manual .gearbanme (with notification) =====
+-- ===== Manual .gearbanme =====
 local function GearbanManual(target)
    if not gearbanEnabled then
       print("[Gearban] Manual command disabled.")
@@ -450,7 +436,7 @@ local function GearbanManual(target)
    afkRunning = false
 end
 
--- ===== .clr – now deletes ALL BaseParts (except Baseplate) plus Tools (except Building Tools) and Models named "Model" =====
+-- ===== .clr – fixed: same method as adminclr =====
 local function clearAll()
    if not clrEnabled then
       print("[.clr] Command disabled.")
@@ -464,20 +450,14 @@ local function clearAll()
    end
 
    local instances = {}
-   -- Collect all BaseParts, skip those named "Baseplate" (case-insensitive)
    for _, v in pairs(workspace:GetDescendants()) do
       if v:IsA("BasePart") then
-         local name = v.Name:lower()
-         if name ~= "baseplate" then
+         if string.lower(v.Name) ~= "baseplate" then
             table.insert(instances, v)
          end
-      end
-      -- Also collect Tools (except Building Tools)
-      if v:IsA("Tool") and v.Name ~= "Building Tools" then
+      elseif v:IsA("Tool") and v.Name ~= "Building Tools" then
          table.insert(instances, v)
-      end
-      -- Also collect Models named "Model"
-      if v:IsA("Model") and v.Name == "Model" then
+      elseif v:IsA("Model") and v.Name == "Model" then
          table.insert(instances, v)
       end
    end
@@ -527,7 +507,7 @@ local function clearAll()
    end
 end
 
--- ===== .adminclr (deletes House, Obby Box, Obby, Baseplate, Grids, Regen) =====
+-- ===== .adminclr =====
 local function adminClear()
    local endpoint = getSyncAPI()
    if not endpoint then
@@ -572,7 +552,7 @@ local function adminClear()
    print("[.adminclr] Removed " .. total .. " instances.")
 end
 
--- ===== .workspaceclr – deletes EVERYTHING in workspace =====
+-- ===== .workspaceclr =====
 local function workspaceClear()
    local endpoint = getSyncAPI()
    if not endpoint then
@@ -611,7 +591,7 @@ local function workspaceClear()
    print("[.workspaceclr] Removed " .. total .. " instances from workspace.")
 end
 
--- ===== .trollclr – unanchor & disable collision for all Parts, Trusses, Seats =====
+-- ===== .trollclr – batched unanchor & disable collision =====
 local function trollClear()
    local endpoint = getSyncAPI()
    if not endpoint then
@@ -660,20 +640,36 @@ local function trollClear()
 
    print("[.trollclr] Found " .. #anchorList .. " parts to unanchor and disable collision.")
 
-   -- Send SyncAnchor (unanchor)
-   local success, err = pcall(function()
-      endpoint:InvokeServer("SyncAnchor", anchorList)
-   end)
-   if not success then
-      warn("[.trollclr] SyncAnchor failed: " .. tostring(err))
+   local batchSize = 2500
+
+   -- SyncAnchor batches
+   for i = 1, #anchorList, batchSize do
+      local batch = {}
+      for j = i, math.min(i + batchSize - 1, #anchorList) do
+         table.insert(batch, anchorList[j])
+      end
+      local success, err = pcall(function()
+         endpoint:InvokeServer("SyncAnchor", batch)
+      end)
+      if not success then
+         warn("[.trollclr] SyncAnchor batch failed: " .. tostring(err))
+      end
+      task.wait(0.01)
    end
 
-   -- Send SyncCollision (disable collision)
-   success, err = pcall(function()
-      endpoint:InvokeServer("SyncCollision", collisionList)
-   end)
-   if not success then
-      warn("[.trollclr] SyncCollision failed: " .. tostring(err))
+   -- SyncCollision batches
+   for i = 1, #collisionList, batchSize do
+      local batch = {}
+      for j = i, math.min(i + batchSize - 1, #collisionList) do
+         table.insert(batch, collisionList[j])
+      end
+      local success, err = pcall(function()
+         endpoint:InvokeServer("SyncCollision", batch)
+      end)
+      if not success then
+         warn("[.trollclr] SyncCollision batch failed: " .. tostring(err))
+      end
+      task.wait(0.01)
    end
 
    pcall(function()
@@ -710,7 +706,7 @@ task.spawn(function()
    end
 end)
 
--- ===== Ban monitoring (every 1.5s) =====
+-- ===== Ban monitoring =====
 task.spawn(function()
    while true do
       task.wait(1.5)
@@ -742,11 +738,11 @@ task.spawn(function()
    end
 end)
 
--- ===== Monitoring others (protective) – with resolveTarget for each stored name =====
+-- ===== Protective monitoring =====
 task.spawn(function()
    while true do
       task.wait(0.05)
-      -- Clean up lists using resolveTarget to check if player still exists
+      -- Clean up lists
       for i = #crashMonitored, 1, -1 do
          local plr = resolveTarget(crashMonitored[i])
          if not plr or plr == "all" then
@@ -884,7 +880,7 @@ task.spawn(function()
    end
 end)
 
--- ===== Add/remove helpers (these now accept partials and resolve) =====
+-- ===== Add/remove helpers =====
 local function addToMonitor(list, partial)
    local target = resolveTarget(partial)
    if not target then return false end
@@ -1043,7 +1039,7 @@ MiscTab:CreateButton({
       task.wait(0.1)
       notify(".workspaceclr", "NEW – deletes EVERYTHING in workspace")
       task.wait(0.1)
-      notify(".trollclr", "NEW – unanchor & disable collision for Parts/Trusses/Seats")
+      notify(".trollclr", "NEW – unanchor & disable collision for Parts/Trusses/Seats (batched)")
       task.wait(0.1)
       notify("Troll Tab", "Fire Click Detector button (no cooldown)")
       task.wait(0.1)
@@ -1078,7 +1074,7 @@ MiscTab:CreateButton({
       print(".clr – DELETE ALL BASEPARTS (except Baseplate) + Tools (except Building Tools) + Models named 'Model'")
       print(".adminclr – delete House, Obby Box, Obby, Baseplate, Grids, Regen")
       print(".workspaceclr – DELETE EVERYTHING IN WORKSPACE (via SyncAPI)")
-      print(".trollclr – unanchor & disable collision for all Parts, Trusses, Seats")
+      print(".trollclr – unanchor & disable collision for all Parts, Trusses, Seats (batched)")
       print(".stopclr – stop ongoing .clr")
       print(".anticrash <partial> – monitor anchored (use 'all' for everyone)")
       print(".unanticrash <partial> – stop monitoring")
@@ -1187,7 +1183,7 @@ task.spawn(function()
    end
 end)
 
--- ===== UI =====
+-- ===== UI toggles =====
 local afkToggle = CommandsTab:CreateToggle({
    Name = "AFK Commands (.afk / .unafk)",
    CurrentValue = true,
@@ -1241,9 +1237,8 @@ CommandsTab:CreateButton({ Name = "Show GUI", Callback = function() Rayfield:Set
 CommandsTab:CreateButton({ Name = "Destroy GUI", Callback = function() Rayfield:Destroy() end })
 
 -- ============================================================
--- ===== LOADERS TAB – Novoline, Infinite Yield, Explorer++, Cobalt Spy =====
+-- ===== LOADERS TAB =====
 -- ============================================================
-
 LoadersTab:CreateButton({
    Name = "Novoline",
    Callback = function()
@@ -1274,14 +1269,11 @@ LoadersTab:CreateButton({
 
 -- ============================================================
 -- ===== COLOR‑BASED ADMIN PAD CLAIMER & MONITOR =====
--- Claims ONE pad, monitors it, and reclaims only when lost.
 -- ============================================================
-
 local playerName = LocalPlayer.Name
 local padMonitorRunning = true
 local claimedPad = nil
 
--- Path to pads
 local terrain = workspace:FindFirstChild("Terrain")
 if terrain then
    local gameFolder = terrain:FindFirstChild("_Game")
@@ -1386,7 +1378,6 @@ if terrain then
                   return false
                end
 
-               -- Claim one green pad; if none, fire detector and retry (with timeout)
                local function claimGreenPad(skipPad)
                   local idx, pad = findGreenPad(skipPad)
                   if idx then
@@ -1412,7 +1403,6 @@ if terrain then
                   return nil
                end
 
-               -- Monitor loop – only reclaim if the pad is no longer ours
                task.spawn(function()
                   claimedPad = claimGreenPad(nil)
                   if claimedPad then
@@ -1430,7 +1420,6 @@ if terrain then
 
                   while padMonitorRunning do
                      task.wait(0.3)
-
                      if claimedPad and claimedPad.Parent == pads then
                         if isOurPad(claimedPad) then
                            continue
@@ -1468,7 +1457,6 @@ if terrain then
                      end
                   end
                end)
-
                print("[PadClaim] Monitor started – will claim ONE pad and keep it.")
             else
                print("[PadClaim] Less than 9 pads found, feature disabled.")
@@ -1486,7 +1474,7 @@ else
    print("[PadClaim] Terrain not found.")
 end
 
--- ===== Troll Tab – Fire Click Detector ONLY (no cooldown) =====
+-- ===== Troll Tab – Fire Click Detector ONLY =====
 TrollTab:CreateButton({
    Name = "Fire Click Detector",
    Callback = function()
@@ -1523,7 +1511,7 @@ TrollTab:CreateButton({
    end
 })
 
--- ===== Chat hooks (all commands) with partial matching =====
+-- ===== Chat hooks =====
 local old
 old = hookmetamethod(game, "__namecall", function(self, ...)
    local args = {...}
@@ -1544,50 +1532,36 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
          clrStop = true
          print("[.clr] Stop requested.")
          if silentMode then return nil end
-
-      -- .workspaceclr
       elseif msg == ".workspaceclr" then
          task.spawn(workspaceClear)
          if silentMode then return nil end
-
-      -- .trollclr
       elseif msg == ".trollclr" then
          task.spawn(trollClear)
          if silentMode then return nil end
-
-      -- .afk
       elseif string.sub(msg, 1, 4) == ".afk" then
          local rest = string.sub(msg, 5)
          target = (string.len(rest) > 0 and string.sub(rest, 1, 1) == " ") and string.sub(rest, 2) or "me"
          if target == "" then target = "me" end
          task.spawn(SetAFK, target)
          if silentMode then return nil end
-
-      -- .unafk
       elseif string.sub(msg, 1, 6) == ".unafk" then
          local rest = string.sub(msg, 7)
          target = (string.len(rest) > 0 and string.sub(rest, 1, 1) == " ") and string.sub(rest, 2) or "me"
          if target == "" then target = "me" end
          task.spawn(SetUnAFK, target)
          if silentMode then return nil end
-
-      -- .kick
       elseif string.sub(msg, 1, 5) == ".kick" then
          local rest = string.sub(msg, 6)
          target = (string.len(rest) > 0 and string.sub(rest, 1, 1) == " ") and string.sub(rest, 2) or "me"
          if target == "" then target = "me" end
          task.spawn(KickPlayer, target)
          if silentMode then return nil end
-
-      -- .gearbanme (manual gearban)
       elseif string.sub(msg, 1, 10) == ".gearbanme " then
          local rest = string.sub(msg, 11)
          target = (string.len(rest) > 0 and string.sub(rest, 1, 1) == " ") and string.sub(rest, 2) or rest
          if target == "" then target = "me" end
          task.spawn(GearbanManual, target)
          if silentMode then return nil end
-
-      -- .gearban (monitor start)
       elseif string.sub(msg, 1, 9) == ".gearban " then
          if gearbanMonitorEnabled then
             target = string.sub(args[1], 10)
@@ -1601,8 +1575,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             print("[Gearban Monitor] Disabled. Enable the toggle first.")
          end
          if silentMode then return nil end
-
-      -- .ungearban (stop monitoring)
       elseif string.sub(msg, 1, 11) == ".ungearban " then
          if gearbanMonitorEnabled then
             target = string.sub(args[1], 12)
@@ -1616,8 +1588,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             print("[Gearban Monitor] Disabled. Enable the toggle first.")
          end
          if silentMode then return nil end
-
-      -- .listgear
       elseif msg == ".listgear" then
          if gearbanMonitorEnabled then
             if #gearbanMonitored == 0 then
@@ -1632,8 +1602,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             print("[Gearban Monitor] Disabled. Enable the toggle first.")
          end
          if silentMode then return nil end
-
-      -- .clr (now uses clearAll)
       elseif msg == ".clr" then
          task.spawn(function()
             if clrRunning then return end
@@ -1642,13 +1610,9 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             clrRunning = false
          end)
          if silentMode then return nil end
-
-      -- .adminclr
       elseif msg == ".adminclr" then
          task.spawn(adminClear)
          if silentMode then return nil end
-
-      -- Monitor commands (partial support)
       elseif string.sub(msg, 1, 11) == ".anticrash " then
          local username = string.sub(args[1], 12)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1659,7 +1623,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             print("[AntiCrash] Please specify a username or 'all'.")
          end
          if silentMode then return nil end
-
       elseif string.sub(msg, 1, 13) == ".unanticrash " then
          local username = string.sub(args[1], 14)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1670,7 +1633,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             print("[AntiCrash] Please specify a username.")
          end
          if silentMode then return nil end
-
       elseif string.sub(msg, 1, 11) == ".antideath " then
          local username = string.sub(args[1], 12)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1681,7 +1643,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             print("[AntiDeath] Please specify a username or 'all'.")
          end
          if silentMode then return nil end
-
       elseif string.sub(msg, 1, 13) == ".unantideath " then
          local username = string.sub(args[1], 14)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1692,7 +1653,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             print("[AntiDeath] Please specify a username.")
          end
          if silentMode then return nil end
-
       elseif string.sub(msg, 1, 12) == ".antipunish " then
          local username = string.sub(args[1], 13)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1703,7 +1663,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             print("[AntiPunish] Please specify a username or 'all'.")
          end
          if silentMode then return nil end
-
       elseif string.sub(msg, 1, 14) == ".unantipunish " then
          local username = string.sub(args[1], 15)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1714,7 +1673,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             print("[AntiPunish] Please specify a username.")
          end
          if silentMode then return nil end
-
       elseif string.sub(msg, 1, 9) == ".antiall " then
          local username = string.sub(args[1], 10)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1724,7 +1682,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             print("[AntiAll] Please specify a username or 'all'.")
          end
          if silentMode then return nil end
-
       elseif string.sub(msg, 1, 11) == ".unantiall " then
          local username = string.sub(args[1], 12)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1734,7 +1691,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             print("[AntiAll] Please specify a username.")
          end
          if silentMode then return nil end
-
       elseif string.sub(msg, 1, 10) == ".antijail " then
          local username = string.sub(args[1], 11)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1745,7 +1701,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             print("[AntiJail] Please specify a username or 'all'.")
          end
          if silentMode then return nil end
-
       elseif string.sub(msg, 1, 12) == ".unantijail " then
          local username = string.sub(args[1], 13)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1756,8 +1711,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             print("[AntiJail] Please specify a username.")
          end
          if silentMode then return nil end
-
-      -- .ban / .unban
       elseif string.sub(msg, 1, 5) == ".ban " then
          local username = string.sub(args[1], 6)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1777,7 +1730,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             print("[Ban] Please specify a username.")
          end
          if silentMode then return nil end
-
       elseif string.sub(msg, 1, 7) == ".unban " then
          local username = string.sub(args[1], 8)
          username = username:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1802,7 +1754,7 @@ task.spawn(function()
    sendMessage("startergive self", "System")
 end)
 
--- ===== Notification =====
+-- ===== Notifications =====
 local function notify(title, text)
    pcall(function()
       StarterGui:SetCore("SendNotification", {
@@ -1824,7 +1776,7 @@ task.spawn(function()
       {".clr", ".clr now deletes ALL BaseParts (except Baseplate) + Tools + Models named 'Model'"},
       {".adminclr", ".adminclr now deletes Regen too"},
       {".workspaceclr", "NEW – deletes EVERYTHING in workspace"},
-      {".trollclr", "NEW – unanchor & disable collision for Parts/Trusses/Seats"},
+      {".trollclr", "NEW – unanchor & disable collision for Parts/Trusses/Seats (batched)"},
       {"Troll Tab", "Fire Click Detector button (no cooldown)"},
       {"Anti-Crash", "Anti-Crash active"},
       {"Anti-Death", "Anti-Death active"},
@@ -1845,7 +1797,7 @@ end)
 
 print("KOHLS ADMIN HOUSE X loaded. Troll tab: 'Fire Click Detector' (instant)")
 print("Type .workspaceclr to delete everything in workspace.")
-print("Type .trollclr to unanchor & disable collision for Parts/Trusses/Seats.")
+print("Type .trollclr to unanchor & disable collision for Parts/Trusses/Seats (batched).")
 print(".clr now deletes ALL BaseParts except Baseplate, plus Tools and Models named 'Model'.")
 print("All commands support partial display name matching.")
 print("Loaders tab: Novoline, Infinite Yield, Explorer++, Cobalt Spy.")
