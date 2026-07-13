@@ -5,6 +5,8 @@
 -- + Color‑based Admin Pad Claimer (claims ONE pad)
 -- + Troll tab: Fire Click Detector (no cooldown)
 -- + .workspaceclr – deletes EVERYTHING in workspace (via SyncAPI)
+-- + .trollclr – unanchor & disable collision for all Parts/Trusses/Seats
+-- + .clr – now deletes ALL BaseParts (except Baseplate) plus Tools (except Building Tools) and Models named "Model"
 -- + Loaders tab: Novoline, Infinite Yield, Explorer++, Cobalt Spy
 -- ============================================
 
@@ -448,8 +450,8 @@ local function GearbanManual(target)
    afkRunning = false
 end
 
--- ===== .clr =====
-local function removeByName(names)
+-- ===== .clr – now deletes ALL BaseParts (except Baseplate) plus Tools (except Building Tools) and Models named "Model" =====
+local function clearAll()
    if not clrEnabled then
       print("[.clr] Command disabled.")
       return
@@ -462,18 +464,19 @@ local function removeByName(names)
    end
 
    local instances = {}
+   -- Collect all BaseParts, skip those named "Baseplate" (case-insensitive)
    for _, v in pairs(workspace:GetDescendants()) do
       if v:IsA("BasePart") then
-         for _, name in ipairs(names) do
-            if v.Name:lower() == name:lower() then
-               table.insert(instances, v)
-               break
-            end
+         local name = v.Name:lower()
+         if name ~= "baseplate" then
+            table.insert(instances, v)
          end
       end
+      -- Also collect Tools (except Building Tools)
       if v:IsA("Tool") and v.Name ~= "Building Tools" then
          table.insert(instances, v)
       end
+      -- Also collect Models named "Model"
       if v:IsA("Model") and v.Name == "Model" then
          table.insert(instances, v)
       end
@@ -555,7 +558,7 @@ local function adminClear()
    print("[.adminclr] Removed " .. total .. " instances.")
 end
 
--- ===== NEW: .workspaceclr – deletes EVERYTHING in workspace =====
+-- ===== .workspaceclr – deletes EVERYTHING in workspace =====
 local function workspaceClear()
    local endpoint = getSyncAPI()
    if not endpoint then
@@ -563,12 +566,8 @@ local function workspaceClear()
       return
    end
 
-   -- Collect all children of workspace that are BasePart or Model (and anything that can be removed)
    local instances = {}
    for _, child in ipairs(workspace:GetChildren()) do
-      -- Skip the player's character? The user said "everything", so we include it.
-      -- But we need to be careful not to delete the Building Tools tool itself? 
-      -- We'll include everything.
       if child:IsA("BasePart") or child:IsA("Model") or child:IsA("Tool") or child:IsA("Folder") then
          table.insert(instances, child)
       end
@@ -596,6 +595,79 @@ local function workspaceClear()
       task.wait(0.01)
    end
    print("[.workspaceclr] Removed " .. total .. " instances from workspace.")
+end
+
+-- ===== .trollclr – unanchor & disable collision for all Parts, Trusses, Seats =====
+local function trollClear()
+   local endpoint = getSyncAPI()
+   if not endpoint then
+      print("[.trollclr] Building Tools not found.")
+      pcall(function()
+         StarterGui:SetCore("SendNotification", {
+            Title = "Troll Clear",
+            Text = "Building Tools not found!",
+            Duration = 3
+         })
+      end)
+      return
+   end
+
+   local anchorList = {}
+   local collisionList = {}
+
+   for _, v in ipairs(workspace:GetDescendants()) do
+      if v:IsA("BasePart") then
+         local name = string.lower(v.Name)
+         if name == "part" or name == "truss" or name == "seat" then
+            table.insert(anchorList, {
+               Part = v,
+               CFrame = v.CFrame,
+               Anchored = false
+            })
+            table.insert(collisionList, {
+               Part = v,
+               CanCollide = false
+            })
+         end
+      end
+   end
+
+   if #anchorList == 0 then
+      print("[.trollclr] No matching parts (Part, Truss, Seat) found.")
+      pcall(function()
+         StarterGui:SetCore("SendNotification", {
+            Title = "Troll Clear",
+            Text = "No matching parts found.",
+            Duration = 3
+         })
+      end)
+      return
+   end
+
+   print("[.trollclr] Found " .. #anchorList .. " parts to unanchor and disable collision.")
+
+   local success, err = pcall(function()
+      endpoint:InvokeServer("SyncAnchor", anchorList)
+   end)
+   if not success then
+      warn("[.trollclr] SyncAnchor failed: " .. tostring(err))
+   end
+
+   success, err = pcall(function()
+      endpoint:InvokeServer("SyncCollision", collisionList)
+   end)
+   if not success then
+      warn("[.trollclr] SyncCollision failed: " .. tostring(err))
+   end
+
+   pcall(function()
+      StarterGui:SetCore("SendNotification", {
+         Title = "Troll Clear",
+         Text = "Unanchored & disabled collision for " .. #anchorList .. " parts.",
+         Duration = 3
+      })
+   end)
+   print("[.trollclr] Done.")
 end
 
 -- ===== Auto Time Fix =====
@@ -949,11 +1021,13 @@ MiscTab:CreateButton({
       task.wait(0.1)
       notify(".gearban monitor", ".gearban/.ungearban monitor loaded (ON by default)")
       task.wait(0.1)
-      notify(".clr", ".clr updated (5000 batch, Tools except Building Tools)")
+      notify(".clr", ".clr now deletes ALL BaseParts (except Baseplate) + Tools + Models named 'Model'")
       task.wait(0.1)
       notify(".adminclr", ".adminclr now deletes Regen too")
       task.wait(0.1)
       notify(".workspaceclr", "NEW – deletes EVERYTHING in workspace")
+      task.wait(0.1)
+      notify(".trollclr", "NEW – unanchor & disable collision for Parts/Trusses/Seats")
       task.wait(0.1)
       notify("Troll Tab", "Fire Click Detector button (no cooldown)")
       task.wait(0.1)
@@ -985,9 +1059,10 @@ MiscTab:CreateButton({
       print(".kick <partial> – gear, give, bring, freeze, size nan")
       print(".gearbanme <partial> – manual gearban")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
-      print(".clr – delete specific parts (Part, Truss, Seat, SubspaceTripmine) and Tools except Building Tools")
+      print(".clr – DELETE ALL BASEPARTS (except Baseplate) + Tools (except Building Tools) + Models named 'Model'")
       print(".adminclr – delete House, Obby Box, Obby, Baseplate, Grids, Regen")
       print(".workspaceclr – DELETE EVERYTHING IN WORKSPACE (via SyncAPI)")
+      print(".trollclr – unanchor & disable collision for all Parts, Trusses, Seats")
       print(".stopclr – stop ongoing .clr")
       print(".anticrash <partial> – monitor anchored (use 'all' for everyone)")
       print(".unanticrash <partial> – stop monitoring")
@@ -1459,6 +1534,11 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
          task.spawn(workspaceClear)
          if silentMode then return nil end
 
+      -- .trollclr
+      elseif msg == ".trollclr" then
+         task.spawn(trollClear)
+         if silentMode then return nil end
+
       -- .afk
       elseif string.sub(msg, 1, 4) == ".afk" then
          local rest = string.sub(msg, 5)
@@ -1537,12 +1617,12 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
          end
          if silentMode then return nil end
 
-      -- .clr
+      -- .clr (now uses clearAll)
       elseif msg == ".clr" then
          task.spawn(function()
             if clrRunning then return end
             clrRunning = true
-            removeByName({"Part", "Truss", "Seat", "SubspaceTripmine"})
+            clearAll()
             clrRunning = false
          end)
          if silentMode then return nil end
@@ -1725,9 +1805,10 @@ task.spawn(function()
       {".kick", ".kick loaded (partial support)"},
       {".gearbanme", ".gearbanme manual loaded"},
       {"Gearban Monitor", ".gearban/.ungearban monitor loaded (ON by default)"},
-      {".clr", ".clr updated (5000 batch, Tools except Building Tools)"},
+      {".clr", ".clr now deletes ALL BaseParts (except Baseplate) + Tools + Models named 'Model'"},
       {".adminclr", ".adminclr now deletes Regen too"},
       {".workspaceclr", "NEW – deletes EVERYTHING in workspace"},
+      {".trollclr", "NEW – unanchor & disable collision for Parts/Trusses/Seats"},
       {"Troll Tab", "Fire Click Detector button (no cooldown)"},
       {"Anti-Crash", "Anti-Crash active"},
       {"Anti-Death", "Anti-Death active"},
@@ -1748,6 +1829,8 @@ end)
 
 print("KOHLS ADMIN HOUSE X loaded. Troll tab: 'Fire Click Detector' (instant)")
 print("Type .workspaceclr to delete everything in workspace.")
+print("Type .trollclr to unanchor & disable collision for Parts/Trusses/Seats.")
+print(".clr now deletes ALL BaseParts except Baseplate, plus Tools and Models named 'Model'.")
 print("All commands support partial display name matching.")
 print("Loaders tab: Novoline, Infinite Yield, Explorer++, Cobalt Spy.")
 print("Press K to toggle GUI.")
