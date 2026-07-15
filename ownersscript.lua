@@ -1,7 +1,6 @@
 -- ============================================
 -- KOHLS ADMIN HOUSE X – FULL (8‑SWORD KICK)
--- Removed: Auto Time Fix
--- Added to .kick: reset, rainbowify, blind, smoke, name "crashed"
+-- Sequential: equip → drop → move → next
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -418,7 +417,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== .kick (8 SWORDS + extra effects) =====
+-- ===== NEW .kick (8 SWORDS SEQUENTIAL) =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    local plr = resolveTarget(target)
@@ -460,7 +459,7 @@ local function KickPlayer(target)
       task.wait(0.1)
    end
 
-   -- 4. Wait for swords in backpack (up to 3 seconds)
+   -- 4. Wait for at least 8 swords in backpack (up to 3 seconds)
    local backpack = LocalPlayer.Backpack
    local swords = {}
    for waitCount = 1, 60 do
@@ -483,7 +482,49 @@ local function KickPlayer(target)
    end
    print("[Kick] Found " .. #swords .. " swords.")
 
-   -- 5. Equip each sword and drop to workspace
+   -- 5. Get victim's HumanoidRootPart
+   local victimHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+   if not victimHRP then
+      print("[Kick] Victim has no HRP, dropping at origin.")
+      local origin = CFrame.new(0, 0, 0)
+      for _, sword in ipairs(swords) do
+         -- Equip, drop, move (but we'll just drop at origin without moving)
+         local char = LocalPlayer.Character
+         if not char then break end
+         local humanoid = char:FindFirstChildOfClass("Humanoid")
+         if not humanoid then break end
+         humanoid:EquipTool(sword)
+         task.wait(0.05)
+         local equipped = nil
+         for j = 1, 10 do
+            equipped = char:FindFirstChild("LinkedSword")
+            if equipped then break end
+            task.wait(0.05)
+         end
+         if equipped then
+            equipped.Parent = Workspace
+            task.wait(0.02)
+            moveToolWithSyncMove(equipped, origin)
+            unanchorAll(equipped)
+         end
+      end
+      afkRunning = false
+      return
+   end
+
+   -- 6. Generate 8 offsets in a circle around victim (radius 2, height 1, forward 1.5)
+   local offsets = {}
+   local radius = 2
+   local height = 1
+   local forward = 1.5
+   for i = 0, 7 do
+      local angle = (i / 8) * math.pi * 2
+      local x = radius * math.cos(angle)
+      local z = radius * math.sin(angle) + forward
+      table.insert(offsets, CFrame.new(x, height, z))
+   end
+
+   -- 7. Process each sword: equip → drop → move → unanchor → next
    local char = LocalPlayer.Character
    if not char then
       print("[Kick] No character.")
@@ -497,10 +538,12 @@ local function KickPlayer(target)
       return
    end
 
-   local droppedSwords = {}
    for i, sword in ipairs(swords) do
+      -- Equip this sword
       humanoid:EquipTool(sword)
       task.wait(0.05)
+
+      -- Wait for it to appear in character
       local equipped = nil
       for j = 1, 10 do
          equipped = char:FindFirstChild("LinkedSword")
@@ -511,57 +554,27 @@ local function KickPlayer(target)
          print("[Kick] Failed to equip sword #" .. i)
          continue
       end
+
+      -- Drop to workspace
       equipped.Parent = Workspace
       task.wait(0.02)
-      table.insert(droppedSwords, equipped)
-   end
 
-   if #droppedSwords == 0 then
-      print("[Kick] No swords dropped.")
-      afkRunning = false
-      return
-   end
-
-   -- 6. Get victim's HumanoidRootPart
-   local victimHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-   if not victimHRP then
-      print("[Kick] Victim has no HRP, dropping at origin.")
-      local origin = CFrame.new(0, 0, 0)
-      for _, sword in ipairs(droppedSwords) do
-         moveToolWithSyncMove(sword, origin)
-         unanchorAll(sword)
-      end
-      afkRunning = false
-      return
-   end
-
-   -- 7. Generate 8 offsets in a circle around victim (radius 2, height 1, forward 1.5)
-   local offsets = {}
-   local radius = 2
-   local height = 1
-   local forward = 1.5
-   for i = 0, 7 do
-      local angle = (i / 8) * math.pi * 2
-      local x = radius * math.cos(angle)
-      local z = radius * math.sin(angle) + forward
-      table.insert(offsets, CFrame.new(x, height, z))
-   end
-
-   -- 8. Move each sword to its target using SyncMove
-   for i, sword in ipairs(droppedSwords) do
+      -- Move to its target offset
       local offset = offsets[i] or offsets[#offsets]
       local targetCFrame = victimHRP.CFrame * offset
-      if moveToolWithSyncMove(sword, targetCFrame) then
+      if moveToolWithSyncMove(equipped, targetCFrame) then
          print("[Kick] Sword #" .. i .. " placed.")
       else
          print("[Kick] Failed to move sword #" .. i)
       end
-      unanchorAll(sword)
-      task.wait(0.02)
+
+      -- Unanchor so the victim can pick it up
+      unanchorAll(equipped)
+      task.wait(0.03)  -- small delay before next sword
    end
 
    afkRunning = false
-   print("[Kick] Completed for " .. plr.Name .. " – 8 swords placed.")
+   print("[Kick] Completed for " .. plr.Name .. " – 8 swords placed sequentially.")
 end
 
 -- .gearbanme
@@ -1076,7 +1089,7 @@ MiscTab:CreateButton({
       local function notify(title, text) pcall(function() StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 3 }) end) end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
-      notify(".kick", "8‑sword + reset/rainbowify/blind/smoke/name")
+      notify(".kick", "8‑sword sequential + reset/rainbowify/blind/smoke/name")
       notify(".afk", ".afk loaded")
       notify(".gearbanme", "Manual gearban")
       notify(".clr", "Deletes Part/Truss/Seat")
@@ -1099,7 +1112,7 @@ MiscTab:CreateButton({
       print("===== KOHLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – reset, rainbowify, blind, smoke, name 'crashed', then drops 8 swords around victim")
+      print(".kick <partial> – reset, rainbowify, blind, smoke, name 'crashed', then drops 8 swords sequentially around victim")
       print(".gearbanme <partial> – manual gearban (portable)")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
       print(".clr – DELETE ONLY 'Part', 'Truss', 'Seat'")
@@ -1550,7 +1563,7 @@ task.spawn(function()
    task.wait(1.5)
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Full version loaded"},
-      {".kick", "8‑sword + reset/rainbowify/blind/smoke/name"},
+      {".kick", "8‑sword sequential + reset/rainbowify/blind/smoke/name"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
       {"Monitor commands", "Use 'all' for everyone"},
@@ -1563,4 +1576,4 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print(".kick now drops 8 LinkedSwords around the victim after reset, rainbowify, blind, smoke, name 'crashed'.")
+print(".kick now drops 8 LinkedSwords sequentially around the victim after reset, rainbowify, blind, smoke, name 'crashed'.")
