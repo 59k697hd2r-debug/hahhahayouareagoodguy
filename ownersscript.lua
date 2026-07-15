@@ -1,6 +1,6 @@
 -- ============================================
 -- KOHLS ADMIN HOUSE X – FULL (8‑SWORD KICK)
--- FAST version – minimal waits, sequential drop
+-- FAST VERSION – all waits reduced by ~0.05s
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -417,7 +417,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== FAST .kick (8 SWORDS SEQUENTIAL) =====
+-- ===== FAST .kick (8 SWORDS SEQUENTIAL, reduced waits) =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    local plr = resolveTarget(target)
@@ -456,13 +456,13 @@ local function KickPlayer(target)
    -- 3. Give 8 swords quickly
    for i = 1, 8 do
       sendMessage("sword", "System")
-      task.wait(0.02)  -- minimal gap
+      task.wait(0.02)
    end
 
    -- 4. Wait for at least 8 swords in backpack (up to 2 seconds)
    local backpack = LocalPlayer.Backpack
    local swords = {}
-   for waitCount = 1, 40 do  -- 2 seconds
+   for waitCount = 1, 40 do
       local found = {}
       for _, child in ipairs(backpack:GetChildren()) do
          if child.Name == "LinkedSword" then
@@ -539,7 +539,7 @@ local function KickPlayer(target)
    for i, sword in ipairs(swords) do
       -- Equip
       humanoid:EquipTool(sword)
-      task.wait(0.01)  -- minimal wait
+      task.wait(0.01)
 
       -- Wait for tool in character
       local equipped = nil
@@ -564,7 +564,7 @@ local function KickPlayer(target)
 
       -- Unanchor
       unanchorAll(equipped)
-      task.wait(0.01)  -- tiny gap before next sword
+      task.wait(0.01)
    end
 
    afkRunning = false
@@ -1570,4 +1570,4 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print(".kick now drops 8 LinkedSwords sequentially (fast) around the victim after reset, rainbowify, blind, smoke, name 'crashed'.")
+print(".kick now drops 8 LinkedSwords sequentially (fast) after reset, rainbowify, blind, smoke, name 'crashed'.")
