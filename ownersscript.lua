@@ -1,18 +1,14 @@
 -- ============================================
 -- KOHLS ADMIN HOUSE X – FULL (SWORD KICK)
 -- ============================================
--- All original features retained:
--- - Commands: .afk, .unafk, .kick (new sword method), .gearbanme, .gearban, .ungearban, .listgear
--- - Clear: .clr, .adminclr, .workspaceclr, .trollclr, .stopclr
--- - Protection monitors: .anticrash, .antideath, .antipunish, .antijail, .antiall (with "all" support)
--- - Ban system: .ban, .unban
--- - Self anti: crash, punish, death, unjail
--- - Misc: silent mode, auto time fix, killbrick immunity, admin pad claimer, troll fire click, loaders
--- - Auto‑startergive self on load
--- - Reduced prints, only essential logs
+-- Ensure the entire script is copied without truncation.
+-- If Rayfield fails to load, it will print an error and stop.
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+if not Rayfield then
+   error("Rayfield failed to load. Check your internet or the URL.")
+end
 
 local Window = Rayfield:CreateWindow({
    Name = "KOHLS ADMIN HOUSE X",
@@ -721,7 +717,7 @@ task.spawn(function()
    end
 end)
 
--- ===== PROTECTIVE MONITORING LOOP (anti‑crash, death, punish, jail) =====
+-- ===== PROTECTIVE MONITORING LOOP =====
 task.spawn(function()
    while true do
       task.wait(0.05)
@@ -827,7 +823,7 @@ task.spawn(function()
          end
       end
 
-      -- Jail others (individual only, no "unjail others" fallback)
+      -- Jail others (individual only)
       for _, storedName in ipairs(jailMonitored) do
          local plr = resolveTarget(storedName)
          if plr and plr ~= "all" then
@@ -845,7 +841,7 @@ task.spawn(function()
    end
 end)
 
--- ===== MONITOR HELPERS (add/remove, with "all" auto‑add) =====
+-- ===== MONITOR HELPERS =====
 local function addToMonitor(list, partial)
    local target = resolveTarget(partial)
    if not target then return false end
@@ -1048,7 +1044,6 @@ MiscTab:CreateToggle({
    Callback = function(v) autoTimeFixEnabled = v; if not v then lastTimeFixSent = false end
 })
 
--- Misc Buttons
 MiscTab:CreateButton({
    Name = "Reshow Notifications",
    Callback = function()
@@ -1391,7 +1386,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
       local msg = string.lower(args[1])
       local target
 
-      -- Self toggles and commands
       if msg == ".antipunish" then
          antiPunishSelfEnabled = true
          antiPunishSelfToggle:Set(true)
@@ -1521,7 +1515,7 @@ task.spawn(function()
    sendMessage("startergive self", "System")
 end)
 
--- ===== NOTIFICATIONS (minimal) =====
+-- ===== NOTIFICATIONS =====
 local function notify(title, text)
    pcall(function() StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 4 }) end)
 end
