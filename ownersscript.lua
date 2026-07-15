@@ -1,8 +1,6 @@
 -- ============================================
 -- KOHLS ADMIN HOUSE X – FINAL PUBLIC VERSION
--- (Modified: .kick now sends ff/god for self and victim,
---  removed "unjail others" fallback,
---  "all" monitoring now auto-adds new players)
+-- (Modified: .kick now also sends rainbowify, blind, speed 0 for victim)
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -315,7 +313,7 @@ local currentChar = LocalPlayer.Character
 if currentChar then onCharacterAdded(currentChar) end
 LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
 
--- .afk, .unafk, .kick (modified: added ff/god for self and victim)
+-- .afk, .unafk, .kick (modified: added ff/god for self and victim, plus rainbowify, blind, speed 0 for victim)
 local function SetAFK(target)
    if not afkEnabled or afkRunning then return end
    local plr = resolveTarget(target)
@@ -343,12 +341,20 @@ local function KickPlayer(target)
    local plr = resolveTarget(target)
    if not plr or plr == "all" then print("[Kick] Invalid target.") return end
    afkRunning = true
-   -- New: ff/god for self and victim
+   -- New: ff/god for self
    sendMessage("ff " .. LocalPlayer.Name, "System")
    task.wait(0.05)
    sendMessage("god " .. LocalPlayer.Name, "System")
    task.wait(0.05)
+   -- New: god for victim
    sendMessage("god " .. plr.Name, "System")
+   task.wait(0.05)
+   -- New: rainbowify, blind, speed 0 for victim
+   sendMessage("rainbowify " .. plr.Name, "System")
+   task.wait(0.05)
+   sendMessage("blind " .. plr.Name, "System")
+   task.wait(0.05)
+   sendMessage("speed " .. plr.Name .. " 0", "System")
    task.wait(0.05)
    -- Existing kick sequence
    for i = 1, 3 do sendMessage("gear " .. EXECUTOR_NAME .. " Hot Potato", "System") task.wait(0.05) end
@@ -902,7 +908,7 @@ MiscTab:CreateButton({
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
       notify(".afk", ".afk loaded (partial support)")
-      notify(".kick", ".kick loaded (uses ff/god self & victim)")
+      notify(".kick", ".kick now sends ff/god self & victim, rainbowify, blind, speed 0")
       notify(".gearbanme", ".gearbanme manual loaded")
       notify(".gearban monitor", ".gearban/.ungearban monitor loaded")
       notify(".clr", ".clr deletes Part/Truss/Seat only")
@@ -927,7 +933,7 @@ MiscTab:CreateButton({
       print("===== KHOLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – ff/god self & victim, then Hot Potato kick")
+      print(".kick <partial> – ff/god self & victim, then rainbowify, blind, speed 0, then Hot Potato kick")
       print(".gearbanme <partial> – manual gearban")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
       print(".clr – DELETE ONLY 'Part', 'Truss', 'Seat'")
@@ -1390,7 +1396,7 @@ task.spawn(function()
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Public version loaded!"},
       {".afk", ".afk loaded"},
-      {".kick", ".kick now sends ff/god self & victim"},
+      {".kick", ".kick now sends ff/god self & victim, rainbowify, blind, speed 0"},
       {".gearbanme", ".gearbanme manual loaded"},
       {"Gearban Monitor", ".gearban/.ungearban monitor loaded"},
       {".clr", ".clr deletes Part/Truss/Seat only"},
@@ -1416,7 +1422,7 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded.")
-print("Changes: .kick now sends ff/god for self and victim.")
+print("Changes: .kick now sends ff/god self & victim, then rainbowify, blind, speed 0 for victim.")
 print("All monitoring modes (.anticrash all etc.) now auto‑add new players.")
 print("Anti‑jail now only sends individual unjails, no 'unjail others' fallback.")
 print("Press K to toggle GUI.")
