@@ -1,6 +1,7 @@
 -- ============================================
--- KOHLS ADMIN HOUSE X – FULL (SWORD KICK)
--- Uses the exact loader that worked (sirius.menu)
+-- KOHLS ADMIN HOUSE X – FULL (8‑SWORD KICK)
+-- Removed: Auto Time Fix
+-- Added to .kick: reset, rainbowify, blind, smoke, name "crashed"
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -31,7 +32,7 @@ MiscTab:CreateToggle({
    Callback = function(v) silentMode = v end
 })
 
--- Gearban manual toggle
+-- Manual Gearban Toggle
 local gearbanEnabled = true
 CommandsTab:CreateToggle({
    Name = "Manual Gearban (.gearbanme)",
@@ -40,7 +41,7 @@ CommandsTab:CreateToggle({
    Callback = function(v) gearbanEnabled = v end
 })
 
--- Gearban monitor toggle
+-- Gearban Monitor Toggle
 local gearbanMonitorEnabled = true
 CommandsTab:CreateToggle({
    Name = "Gearban Monitor (.gearban / .ungearban)",
@@ -77,7 +78,7 @@ local jailMonitored = {}
 local banMonitored = {}
 local banWasAbsent = {}
 
--- "all" mode flags
+-- "all" monitoring flags and PlayerAdded connections
 local crashMonitorAll = false
 local deathMonitorAll = false
 local punishMonitorAll = false
@@ -116,7 +117,7 @@ local function sendMessage(msg, channel)
    ChatEvent:FireServer(msg, channel)
 end
 
--- Partial matcher
+-- Partial matcher by display name
 local function resolveTarget(partial)
    if not partial or partial == "" then return nil end
    partial = string.lower(partial)
@@ -201,6 +202,21 @@ local function unanchorAll(model)
    end
 end
 
+-- Helper: get BasePart (Handle) from a tool
+local function getBasePart(tool)
+   if not tool then return nil end
+   local part = tool:FindFirstChild("Handle")
+   if part and part:IsA("BasePart") then
+      return part
+   end
+   for _, child in ipairs(tool:GetChildren()) do
+      if child:IsA("BasePart") then
+         return child
+      end
+   end
+   return nil
+end
+
 -- Helper: move tool using SyncMove (Cobalt format)
 local function moveToolWithSyncMove(tool, targetCFrame)
    if not tool then return false end
@@ -215,7 +231,7 @@ local function moveToolWithSyncMove(tool, targetCFrame)
       end
       return true
    end
-   local handle = ensurePrimaryPart(tool)
+   local handle = getBasePart(tool)
    if not handle then
       if tool.PrimaryPart then tool:SetPrimaryPartCFrame(targetCFrame) end
       return true
@@ -402,7 +418,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== NEW .kick (SWORD METHOD) =====
+-- ===== .kick (8 SWORDS + extra effects) =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    local plr = resolveTarget(target)
@@ -412,15 +428,19 @@ local function KickPlayer(target)
    end
    afkRunning = true
 
-   -- Extra victim commands: reset, rainbowify, blind
+   -- 1. Extra victim effects: reset, rainbowify, blind, smoke, name "crashed"
    sendMessage("reset " .. plr.Name, "System")
    task.wait(0.08)
    sendMessage("rainbowify " .. plr.Name, "System")
    task.wait(0.08)
    sendMessage("blind " .. plr.Name, "System")
    task.wait(0.08)
+   sendMessage("smoke " .. plr.Name, "System")
+   task.wait(0.08)
+   sendMessage("name " .. plr.Name .. " crashed", "System")
+   task.wait(0.08)
 
-   -- Self protect and lock victim (freeze before size)
+   -- 2. Protect self and lock victim (freeze before size)
    sendMessage("ff " .. LocalPlayer.Name, "System")
    task.wait(0.05)
    sendMessage("god " .. LocalPlayer.Name, "System")
@@ -434,25 +454,36 @@ local function KickPlayer(target)
    sendMessage("size " .. plr.Name .. " nan", "System")
    task.wait(0.05)
 
-   -- Give one LinkedSword
-   sendMessage("sword", "System")
-   task.wait(0.3)
-
-   -- Wait for sword in backpack
-   local backpack = LocalPlayer.Backpack
-   local sword = nil
-   for i = 1, 30 do
-      sword = backpack:FindFirstChild("LinkedSword")
-      if sword then break end
+   -- 3. Give 8 LinkedSwords
+   for i = 1, 8 do
+      sendMessage("sword", "System")
       task.wait(0.1)
    end
-   if not sword then
+
+   -- 4. Wait for swords in backpack (up to 3 seconds)
+   local backpack = LocalPlayer.Backpack
+   local swords = {}
+   for waitCount = 1, 60 do
+      local found = {}
+      for _, child in ipairs(backpack:GetChildren()) do
+         if child.Name == "LinkedSword" then
+            table.insert(found, child)
+         end
+      end
+      if #found >= 8 then
+         swords = found
+         break
+      end
+      task.wait(0.05)
+   end
+   if #swords == 0 then
       print("[Kick] No LinkedSword found.")
       afkRunning = false
       return
    end
+   print("[Kick] Found " .. #swords .. " swords.")
 
-   -- Equip
+   -- 5. Equip each sword and drop to workspace
    local char = LocalPlayer.Character
    if not char then
       print("[Kick] No character.")
@@ -465,46 +496,72 @@ local function KickPlayer(target)
       afkRunning = false
       return
    end
-   humanoid:EquipTool(sword)
-   task.wait(0.2)
 
-   -- Wait for it in character
-   local equipped = nil
-   for i = 1, 20 do
-      equipped = char:FindFirstChild("LinkedSword")
-      if equipped then break end
-      task.wait(0.1)
+   local droppedSwords = {}
+   for i, sword in ipairs(swords) do
+      humanoid:EquipTool(sword)
+      task.wait(0.05)
+      local equipped = nil
+      for j = 1, 10 do
+         equipped = char:FindFirstChild("LinkedSword")
+         if equipped then break end
+         task.wait(0.05)
+      end
+      if not equipped then
+         print("[Kick] Failed to equip sword #" .. i)
+         continue
+      end
+      equipped.Parent = Workspace
+      task.wait(0.02)
+      table.insert(droppedSwords, equipped)
    end
-   if not equipped then
-      print("[Kick] Equip failed.")
+
+   if #droppedSwords == 0 then
+      print("[Kick] No swords dropped.")
       afkRunning = false
       return
    end
 
-   -- Drop to workspace
-   equipped.Parent = Workspace
-   task.wait(0.05)
-
-   -- Move to victim's feet
+   -- 6. Get victim's HumanoidRootPart
    local victimHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-   if victimHRP then
-      local targetCFrame = victimHRP.CFrame * CFrame.new(0, -1, 0)
-      if moveToolWithSyncMove(equipped, targetCFrame) then
-         print("[Kick] Sword delivered.")
-      else
-         print("[Kick] Move failed.")
+   if not victimHRP then
+      print("[Kick] Victim has no HRP, dropping at origin.")
+      local origin = CFrame.new(0, 0, 0)
+      for _, sword in ipairs(droppedSwords) do
+         moveToolWithSyncMove(sword, origin)
+         unanchorAll(sword)
       end
-   else
-      print("[Kick] Victim no HRP, dropping at origin.")
-      if equipped.PrimaryPart then equipped:SetPrimaryPartCFrame(CFrame.new(0,0,0)) end
+      afkRunning = false
+      return
    end
 
-   -- Unanchor to make pickable
-   unanchorAll(equipped)
-   print("[Kick] Sword is pickable.")
+   -- 7. Generate 8 offsets in a circle around victim (radius 2, height 1, forward 1.5)
+   local offsets = {}
+   local radius = 2
+   local height = 1
+   local forward = 1.5
+   for i = 0, 7 do
+      local angle = (i / 8) * math.pi * 2
+      local x = radius * math.cos(angle)
+      local z = radius * math.sin(angle) + forward
+      table.insert(offsets, CFrame.new(x, height, z))
+   end
+
+   -- 8. Move each sword to its target using SyncMove
+   for i, sword in ipairs(droppedSwords) do
+      local offset = offsets[i] or offsets[#offsets]
+      local targetCFrame = victimHRP.CFrame * offset
+      if moveToolWithSyncMove(sword, targetCFrame) then
+         print("[Kick] Sword #" .. i .. " placed.")
+      else
+         print("[Kick] Failed to move sword #" .. i)
+      end
+      unanchorAll(sword)
+      task.wait(0.02)
+   end
 
    afkRunning = false
-   print("[Kick] Completed for " .. plr.Name)
+   print("[Kick] Completed for " .. plr.Name .. " – 8 swords placed.")
 end
 
 -- .gearbanme
@@ -532,6 +589,7 @@ local function GearbanManual(target)
 end
 
 -- ===== CLEAR FUNCTIONS =====
+
 -- .clr
 local function clearAll()
    if not clrEnabled then print("[.clr] Disabled.") return end
@@ -624,7 +682,7 @@ local function workspaceClear()
    print("[.workspaceclr] Removed " .. total .. " instances.")
 end
 
--- .trollclr (1 sec pause between unanchor and collision)
+-- .trollclr
 local function trollClear()
    local endpoint = getSyncAPI()
    if not endpoint then
@@ -657,7 +715,7 @@ local function trollClear()
       if not success then warn("[.trollclr] SyncAnchor failed: " .. tostring(err)) end
       task.wait(0.2)
    end
-   task.wait(1) -- pause between phases
+   task.wait(1)
    for i = 1, #collisionList, batchSize do
       local batch = {}
       for j = i, math.min(i + batchSize - 1, #collisionList) do table.insert(batch, collisionList[j]) end
@@ -668,26 +726,6 @@ local function trollClear()
    pcall(function() StarterGui:SetCore("SendNotification", { Title = "Troll Clear", Text = "Unanchored & disabled collision for " .. #anchorList .. " parts.", Duration = 3 }) end)
    print("[.trollclr] Done.")
 end
-
--- ===== AUTO TIME FIX =====
-local autoTimeFixEnabled = false
-local lastTimeFixSent = false
-task.spawn(function()
-   while true do
-      task.wait(5)
-      if autoTimeFixEnabled then
-         local timeOfDay = Lighting.TimeOfDay
-         local hour = tonumber(string.sub(timeOfDay, 1, 2))
-         if hour then
-            local isNight = (hour >= 20 or hour < 6)
-            if isNight and not lastTimeFixSent then
-               sendMessage("time 12", "System")
-               lastTimeFixSent = true
-            elseif not isNight then lastTimeFixSent = false end
-         end
-      else lastTimeFixSent = false end
-   end
-end)
 
 -- ===== BAN MONITOR =====
 task.spawn(function()
@@ -817,7 +855,7 @@ task.spawn(function()
          end
       end
 
-      -- Jail others (individual only)
+      -- Jail others
       for _, storedName in ipairs(jailMonitored) do
          local plr = resolveTarget(storedName)
          if plr and plr ~= "all" then
@@ -1031,20 +1069,14 @@ MiscTab:CreateToggle({
    Callback = function(v) selfJailEnabled = v end
 })
 
-MiscTab:CreateToggle({
-   Name = "Auto Time Fix",
-   CurrentValue = false,
-   Flag = "AutoTimeFix",
-   Callback = function(v) autoTimeFixEnabled = v; if not v then lastTimeFixSent = false end
-})
-
+-- Misc Buttons
 MiscTab:CreateButton({
    Name = "Reshow Notifications",
    Callback = function()
       local function notify(title, text) pcall(function() StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 3 }) end) end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
-      notify(".kick", "Sword method (reset+rainbowify+blind)")
+      notify(".kick", "8‑sword + reset/rainbowify/blind/smoke/name")
       notify(".afk", ".afk loaded")
       notify(".gearbanme", "Manual gearban")
       notify(".clr", "Deletes Part/Truss/Seat")
@@ -1067,7 +1099,7 @@ MiscTab:CreateButton({
       print("===== KOHLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – reset, rainbowify, blind, then drops a LinkedSword at victim's feet (pickable)")
+      print(".kick <partial> – reset, rainbowify, blind, smoke, name 'crashed', then drops 8 swords around victim")
       print(".gearbanme <partial> – manual gearban (portable)")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
       print(".clr – DELETE ONLY 'Part', 'Truss', 'Seat'")
@@ -1518,7 +1550,7 @@ task.spawn(function()
    task.wait(1.5)
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Full version loaded"},
-      {".kick", "Sword method (reset+rainbowify+blind)"},
+      {".kick", "8‑sword + reset/rainbowify/blind/smoke/name"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
       {"Monitor commands", "Use 'all' for everyone"},
@@ -1531,4 +1563,4 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print(".kick now gives a pickable LinkedSword at the victim's feet after reset, rainbowify, blind.")
+print(".kick now drops 8 LinkedSwords around the victim after reset, rainbowify, blind, smoke, name 'crashed'.")
