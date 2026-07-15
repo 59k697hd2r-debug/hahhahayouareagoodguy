@@ -1,21 +1,9 @@
 -- ============================================
 -- KOHLS ADMIN HOUSE X – FULL (SWORD KICK)
--- Safe Rayfield loader + fallback URL
+-- Uses the exact loader that worked (sirius.menu)
 -- ============================================
 
-local RayfieldRaw
-local success, err = pcall(function()
-   RayfieldRaw = loadstring(game:HttpGet('https://sirius.menu/rayfield'))
-end)
-if not success or not RayfieldRaw then
-   -- Fallback to a known working mirror
-   warn("Primary Rayfield URL failed, trying fallback...")
-   RayfieldRaw = loadstring(game:HttpGet('https://raw.githubusercontent.com/shlexware/Rayfield/main/source'))
-end
-if not RayfieldRaw then
-   error("Rayfield failed to load from both URLs.")
-end
-local Rayfield = RayfieldRaw()
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
    Name = "KOHLS ADMIN HOUSE X",
