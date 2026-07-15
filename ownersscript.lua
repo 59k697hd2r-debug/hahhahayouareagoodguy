@@ -1,11 +1,19 @@
 -- ============================================
 -- KOHLS ADMIN HOUSE X – FULL (SWORD KICK)
--- Safe Rayfield loader with sirius.menu
+-- Safe Rayfield loader + fallback URL
 -- ============================================
 
-local RayfieldRaw = loadstring(game:HttpGet('https://sirius.menu/rayfield'))
+local RayfieldRaw
+local success, err = pcall(function()
+   RayfieldRaw = loadstring(game:HttpGet('https://sirius.menu/rayfield'))
+end)
+if not success or not RayfieldRaw then
+   -- Fallback to a known working mirror
+   warn("Primary Rayfield URL failed, trying fallback...")
+   RayfieldRaw = loadstring(game:HttpGet('https://raw.githubusercontent.com/shlexware/Rayfield/main/source'))
+end
 if not RayfieldRaw then
-   error("Rayfield failed to load from sirius.menu. Check internet or URL.")
+   error("Rayfield failed to load from both URLs.")
 end
 local Rayfield = RayfieldRaw()
 
@@ -118,8 +126,6 @@ local jailAllCooldownTime = 1.0
 local function sendMessage(msg, channel)
    if silentMode then channel = "System" else channel = channel or "All" end
    ChatEvent:FireServer(msg, channel)
-   -- Only print important commands (we keep prints for debugging)
-   -- print("[Chat] (" .. channel .. ") " .. msg)
 end
 
 -- Partial matcher
