@@ -1,7 +1,8 @@
 -- ============================================
 -- KOHLS ADMIN HOUSE X – FINAL PUBLIC VERSION
--- (Modified: dynamic self model name, fixed self‑jail, reduced prints,
---  trollClear: 1 sec wait between unanchor and collision phases)
+-- (Modified: .kick now sends ff/god for self and victim,
+--  removed "unjail others" fallback,
+--  "all" monitoring now auto-adds new players)
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -77,6 +78,16 @@ local jailMonitored = {}
 local banMonitored = {}
 local banWasAbsent = {}
 
+-- "all" monitoring flags and PlayerAdded connections
+local crashMonitorAll = false
+local deathMonitorAll = false
+local punishMonitorAll = false
+local jailMonitorAll = false
+local crashConn = nil
+local deathConn = nil
+local punishConn = nil
+local jailConn = nil
+
 -- Gearban monitor
 local gearbanMonitored = {}
 local gearbanLastSent = {}
@@ -99,9 +110,6 @@ local deathSelfCooldown = 1.5
 local lastThawSelfTime = 0
 local thawSelfCooldown = 1.0
 local deathRecently = false
-
-local jailAllCooldown = 0
-local jailAllCooldownTime = 1.0
 
 -- Helper: send message
 local function sendMessage(msg, channel)
@@ -307,7 +315,7 @@ local currentChar = LocalPlayer.Character
 if currentChar then onCharacterAdded(currentChar) end
 LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
 
--- .afk, .unafk, .kick, .gearbanme
+-- .afk, .unafk, .kick (modified: added ff/god for self and victim)
 local function SetAFK(target)
    if not afkEnabled or afkRunning then return end
    local plr = resolveTarget(target)
@@ -335,6 +343,14 @@ local function KickPlayer(target)
    local plr = resolveTarget(target)
    if not plr or plr == "all" then print("[Kick] Invalid target.") return end
    afkRunning = true
+   -- New: ff/god for self and victim
+   sendMessage("ff " .. LocalPlayer.Name, "System")
+   task.wait(0.05)
+   sendMessage("god " .. LocalPlayer.Name, "System")
+   task.wait(0.05)
+   sendMessage("god " .. plr.Name, "System")
+   task.wait(0.05)
+   -- Existing kick sequence
    for i = 1, 3 do sendMessage("gear " .. EXECUTOR_NAME .. " Hot Potato", "System") task.wait(0.05) end
    for i = 1, 4 do sendMessage("give " .. EXECUTOR_NAME .. " Hot Potato", "System") task.wait(0.05) end
    sendMessage("bring " .. plr.Name, "System")
@@ -459,7 +475,7 @@ local function workspaceClear()
    print("[.workspaceclr] Removed " .. total .. " instances from workspace.")
 end
 
--- .trollclr – modified: 1 sec wait between unanchor and collision phases
+-- .trollclr – 1 sec wait between unanchor and collision
 local function trollClear()
    local endpoint = getSyncAPI()
    if not endpoint then
@@ -485,20 +501,14 @@ local function trollClear()
    end
    print("[.trollclr] Found " .. #anchorList .. " parts to unanchor and disable collision.")
    local batchSize = 5000
-
-   -- Unanchor phase
    for i = 1, #anchorList, batchSize do
       local batch = {}
       for j = i, math.min(i + batchSize - 1, #anchorList) do table.insert(batch, anchorList[j]) end
       local success, err = pcall(function() endpoint:InvokeServer("SyncAnchor", batch) end)
       if not success then warn("[.trollclr] SyncAnchor batch failed: " .. tostring(err)) end
-      task.wait(0.2) -- small delay between batches
+      task.wait(0.2)
    end
-
-   -- 1 second wait between unanchor and collision phases
-   task.wait(1)
-
-   -- Disable collision phase
+   task.wait(1) -- 1 second pause between phases
    for i = 1, #collisionList, batchSize do
       local batch = {}
       for j = i, math.min(i + batchSize - 1, #collisionList) do table.insert(batch, collisionList[j]) end
@@ -506,7 +516,6 @@ local function trollClear()
       if not success then warn("[.trollclr] SyncCollision batch failed: " .. tostring(err)) end
       task.wait(0.2)
    end
-
    pcall(function() StarterGui:SetCore("SendNotification", { Title = "Troll Clear", Text = "Unanchored & disabled collision for " .. #anchorList .. " parts.", Duration = 3 }) end)
    print("[.trollclr] Done.")
 end
@@ -557,7 +566,7 @@ end)
 task.spawn(function()
    while true do
       task.wait(0.05)
-      -- Clean up lists
+      -- Clean up lists (remove invalid entries)
       for i = #crashMonitored, 1, -1 do
          local plr = resolveTarget(crashMonitored[i])
          if not plr or plr == "all" then table.remove(crashMonitored, i) end
@@ -584,7 +593,7 @@ task.spawn(function()
          if not plr or plr == "all" then table.remove(jailMonitored, i) end
       end
 
-      -- Crash
+      -- Crash monitor
       for _, storedName in ipairs(crashMonitored) do
          local plr = resolveTarget(storedName)
          if plr and plr ~= "all" and plr.Character then
@@ -600,7 +609,7 @@ task.spawn(function()
          end
       end
 
-      -- Death
+      -- Death monitor
       for _, storedName in ipairs(deathMonitored) do
          local plr = resolveTarget(storedName)
          if plr and plr ~= "all" and plr.Character then
@@ -616,7 +625,7 @@ task.spawn(function()
          end
       end
 
-      -- Punish
+      -- Punish monitor
       for _, storedName in ipairs(punishMonitored) do
          local plr = resolveTarget(storedName)
          if plr and plr ~= "all" then
@@ -659,15 +668,12 @@ task.spawn(function()
          end
       end
 
-      -- Jail (others)
-      local jailedCount = 0
-      local totalMonitored = #jailMonitored
+      -- Jail (others) – only individual unjails, no "unjail others" fallback
       for _, storedName in ipairs(jailMonitored) do
          local plr = resolveTarget(storedName)
          if plr and plr ~= "all" then
             local jailModel = workspace:FindFirstChild(plr.Name .. "'s jail")
             if jailModel then
-               jailedCount = jailedCount + 1
                local now = tick()
                local key = plr.Name .. "_jail"
                if not lastActionTime[key] or now - lastActionTime[key] >= 1.0 then
@@ -677,34 +683,113 @@ task.spawn(function()
             end
          end
       end
-      if totalMonitored > 0 and jailedCount == totalMonitored then
-         local now = tick()
-         if now - jailAllCooldown >= jailAllCooldownTime then
-            jailAllCooldown = now
-            sendMessage("unjail others", "System")
-         end
-      else
-         jailAllCooldown = 0
-      end
    end
 end)
 
--- Add/remove helpers
+-- ===== Add/remove helpers with "all" support and auto‑add new players =====
 local function addToMonitor(list, partial)
    local target = resolveTarget(partial)
    if not target then return false end
    if target == "all" then
-      for _, plr in ipairs(Players:GetPlayers()) do
-         if plr ~= LocalPlayer then
-            local found = false
-            for _, name in ipairs(list) do
-               if name:lower() == plr.Name:lower() then found = true; break end
+      -- Determine which list and set up "all" mode
+      if list == crashMonitored then
+         if not crashMonitorAll then
+            crashMonitorAll = true
+            -- Add all current players except self
+            for _, plr in ipairs(Players:GetPlayers()) do
+               if plr ~= LocalPlayer then
+                  local found = false
+                  for _, name in ipairs(crashMonitored) do
+                     if name:lower() == plr.Name:lower() then found = true; break end
+                  end
+                  if not found then table.insert(crashMonitored, plr.Name) end
+               end
             end
-            if not found then table.insert(list, plr.Name) end
+            -- Connect PlayerAdded
+            crashConn = Players.PlayerAdded:Connect(function(plr)
+               if plr ~= LocalPlayer then
+                  local found = false
+                  for _, name in ipairs(crashMonitored) do
+                     if name:lower() == plr.Name:lower() then found = true; break end
+                  end
+                  if not found then table.insert(crashMonitored, plr.Name) end
+               end
+            end)
+            print("[AntiCrash] Monitoring ALL players (including future joins).")
+         end
+      elseif list == deathMonitored then
+         if not deathMonitorAll then
+            deathMonitorAll = true
+            for _, plr in ipairs(Players:GetPlayers()) do
+               if plr ~= LocalPlayer then
+                  local found = false
+                  for _, name in ipairs(deathMonitored) do
+                     if name:lower() == plr.Name:lower() then found = true; break end
+                  end
+                  if not found then table.insert(deathMonitored, plr.Name) end
+               end
+            end
+            deathConn = Players.PlayerAdded:Connect(function(plr)
+               if plr ~= LocalPlayer then
+                  local found = false
+                  for _, name in ipairs(deathMonitored) do
+                     if name:lower() == plr.Name:lower() then found = true; break end
+                  end
+                  if not found then table.insert(deathMonitored, plr.Name) end
+               end
+            end)
+            print("[AntiDeath] Monitoring ALL players (including future joins).")
+         end
+      elseif list == punishMonitored then
+         if not punishMonitorAll then
+            punishMonitorAll = true
+            for _, plr in ipairs(Players:GetPlayers()) do
+               if plr ~= LocalPlayer then
+                  local found = false
+                  for _, name in ipairs(punishMonitored) do
+                     if name:lower() == plr.Name:lower() then found = true; break end
+                  end
+                  if not found then table.insert(punishMonitored, plr.Name) end
+               end
+            end
+            punishConn = Players.PlayerAdded:Connect(function(plr)
+               if plr ~= LocalPlayer then
+                  local found = false
+                  for _, name in ipairs(punishMonitored) do
+                     if name:lower() == plr.Name:lower() then found = true; break end
+                  end
+                  if not found then table.insert(punishMonitored, plr.Name) end
+               end
+            end)
+            print("[AntiPunish] Monitoring ALL players (including future joins).")
+         end
+      elseif list == jailMonitored then
+         if not jailMonitorAll then
+            jailMonitorAll = true
+            for _, plr in ipairs(Players:GetPlayers()) do
+               if plr ~= LocalPlayer then
+                  local found = false
+                  for _, name in ipairs(jailMonitored) do
+                     if name:lower() == plr.Name:lower() then found = true; break end
+                  end
+                  if not found then table.insert(jailMonitored, plr.Name) end
+               end
+            end
+            jailConn = Players.PlayerAdded:Connect(function(plr)
+               if plr ~= LocalPlayer then
+                  local found = false
+                  for _, name in ipairs(jailMonitored) do
+                     if name:lower() == plr.Name:lower() then found = true; break end
+                  end
+                  if not found then table.insert(jailMonitored, plr.Name) end
+               end
+            end)
+            print("[AntiJail] Monitoring ALL players (including future joins).")
          end
       end
       return true
    else
+      -- Single player addition
       local name = target.Name
       for _, n in ipairs(list) do
          if n:lower() == name:lower() then return false end
@@ -718,19 +803,29 @@ local function removeFromMonitor(list, partial)
    local target = resolveTarget(partial)
    if not target then return false end
    if target == "all" then
-      local removed = false
-      for _, plr in ipairs(Players:GetPlayers()) do
-         if plr ~= LocalPlayer then
-            for i, name in ipairs(list) do
-               if name:lower() == plr.Name:lower() then
-                  table.remove(list, i)
-                  removed = true
-                  break
-               end
-            end
-         end
+      -- Stop "all" monitoring for the specific list
+      if list == crashMonitored and crashMonitorAll then
+         crashMonitorAll = false
+         if crashConn then crashConn:Disconnect(); crashConn = nil end
+         for i = #crashMonitored, 1, -1 do table.remove(crashMonitored, i) end
+         print("[AntiCrash] Stopped monitoring ALL.")
+      elseif list == deathMonitored and deathMonitorAll then
+         deathMonitorAll = false
+         if deathConn then deathConn:Disconnect(); deathConn = nil end
+         for i = #deathMonitored, 1, -1 do table.remove(deathMonitored, i) end
+         print("[AntiDeath] Stopped monitoring ALL.")
+      elseif list == punishMonitored and punishMonitorAll then
+         punishMonitorAll = false
+         if punishConn then punishConn:Disconnect(); punishConn = nil end
+         for i = #punishMonitored, 1, -1 do table.remove(punishMonitored, i) end
+         print("[AntiPunish] Stopped monitoring ALL.")
+      elseif list == jailMonitored and jailMonitorAll then
+         jailMonitorAll = false
+         if jailConn then jailConn:Disconnect(); jailConn = nil end
+         for i = #jailMonitored, 1, -1 do table.remove(jailMonitored, i) end
+         print("[AntiJail] Stopped monitoring ALL.")
       end
-      return removed
+      return true
    else
       local name = target.Name
       for i, n in ipairs(list) do
@@ -807,20 +902,20 @@ MiscTab:CreateButton({
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
       notify(".afk", ".afk loaded (partial support)")
-      notify(".kick", ".kick loaded (partial support, uses Hot Potato)")
+      notify(".kick", ".kick loaded (uses ff/god self & victim)")
       notify(".gearbanme", ".gearbanme manual loaded")
-      notify(".gearban monitor", ".gearban/.ungearban monitor loaded (ON by default)")
+      notify(".gearban monitor", ".gearban/.ungearban monitor loaded")
       notify(".clr", ".clr deletes Part/Truss/Seat only")
       notify(".adminclr", ".adminclr deletes House, Obby, Baseplate, etc.")
       notify(".workspaceclr", "NEW – deletes EVERYTHING in workspace")
-      notify(".trollclr", "NEW – unanchor & disable collision (batch 5000, wait 0.2, 1 sec between phases)")
-      notify("Troll Tab", "Fire Click Detector button (no cooldown)")
+      notify(".trollclr", "NEW – unanchor & disable collision (batch 5000, 1s between phases)")
+      notify("Troll Tab", "Fire Click Detector button")
       notify("Anti-Crash", "Anti-Crash active")
       notify("Anti-Death", "Anti-Death active")
       notify("Anti-Punish", "Anti-Punish active")
       notify("Jail Monitor", "Self-Unjail active")
-      notify("Ban System", ".ban / .unban loaded (partial support)")
-      notify("Monitor Commands", "Use 'all' to monitor everyone")
+      notify("Ban System", ".ban / .unban loaded")
+      notify("Monitor Commands", "Use 'all' to monitor everyone (auto-adds new players)")
       notify("Killbrick Immunity", "Active – covers all parts in obby")
       if silentMode then notify("Silent Mode", "Commands are hidden from chat") end
    end
@@ -832,15 +927,15 @@ MiscTab:CreateButton({
       print("===== KHOLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – gear/give EXECUTOR_NAME Hot Potato, bring, freeze, size nan")
+      print(".kick <partial> – ff/god self & victim, then Hot Potato kick")
       print(".gearbanme <partial> – manual gearban")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
       print(".clr – DELETE ONLY 'Part', 'Truss', 'Seat'")
       print(".adminclr – delete House, Obby Box, Obby, Baseplate, Grids, Regen")
       print(".workspaceclr – DELETE EVERYTHING IN WORKSPACE (via SyncAPI)")
-      print(".trollclr – unanchor & disable collision for all Parts, Trusses, Seats (batch 5000, wait 0.2, 1 sec between phases)")
+      print(".trollclr – unanchor & disable collision for all Parts, Trusses, Seats (batch 5000, 1s between phases)")
       print(".stopclr – stop ongoing .clr")
-      print(".anticrash <partial> – monitor anchored (use 'all' for everyone)")
+      print(".anticrash <partial> – monitor anchored (use 'all' for everyone, auto-adds new players)")
       print(".unanticrash <partial> – stop monitoring")
       print(".antideath <partial> – monitor death (health ≤ 0)")
       print(".unantideath <partial> – stop monitoring")
@@ -848,7 +943,7 @@ MiscTab:CreateButton({
       print(".unantipunish <partial> – stop monitoring")
       print(".antiall <partial> – monitor crash, death, punish, and jail")
       print(".unantiall <partial> – stop all monitoring")
-      print(".antijail <partial> – monitor jail model in workspace")
+      print(".antijail <partial> – monitor jail model in workspace (only individual unjails)")
       print(".unantijail <partial> – stop jail monitoring")
       print(".ban <partial> – kick + monitor rejoin (sends .kick)")
       print(".unban <partial> – stop ban monitoring")
@@ -986,7 +1081,7 @@ LoadersTab:CreateButton({ Name = "Infinite Yield", Callback = function() loadstr
 LoadersTab:CreateButton({ Name = "Explorer ++", Callback = function() loadstring(game:HttpGet("https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua"))() end })
 LoadersTab:CreateButton({ Name = "Cobalt Spy", Callback = function() loadstring(game:HttpGet("https://github.com/notpoiu/cobalt/releases/latest/download/Cobalt.luau"))() end })
 
--- Color‑based Admin Pad Claimer (reduced prints)
+-- Color‑based Admin Pad Claimer
 local playerName = LocalPlayer.Name
 local padMonitorRunning = true
 local claimedPad = nil
@@ -1285,7 +1380,7 @@ end)
 -- Auto‑send "startergive self"
 task.spawn(function() task.wait(1); sendMessage("startergive self", "System") end)
 
--- Notifications (reduced)
+-- Notifications
 local function notify(title, text)
    pcall(function() StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 4 }) end)
 end
@@ -1295,20 +1390,20 @@ task.spawn(function()
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Public version loaded!"},
       {".afk", ".afk loaded"},
-      {".kick", ".kick loaded"},
+      {".kick", ".kick now sends ff/god self & victim"},
       {".gearbanme", ".gearbanme manual loaded"},
       {"Gearban Monitor", ".gearban/.ungearban monitor loaded"},
       {".clr", ".clr deletes Part/Truss/Seat only"},
       {".adminclr", ".adminclr deletes House, Obby, Baseplate, etc."},
       {".workspaceclr", "NEW – deletes EVERYTHING in workspace"},
-      {".trollclr", "NEW – unanchor & disable collision (batch 5000, wait 0.2, 1 sec between phases)"},
+      {".trollclr", "NEW – unanchor & disable collision (1s between phases)"},
       {"Troll Tab", "Fire Click Detector button"},
-      {"Anti-Crash", "Anti-Crash active"},
+      {"Anti-Crash", "Anti-Crash active (all mode auto-adds players)"},
       {"Anti-Death", "Anti-Death active"},
       {"Anti-Punish", "Anti-Punish active"},
-      {"Jail Monitor", "Self-Unjail active"},
+      {"Jail Monitor", "Self-Unjail active (individual unjails only)"},
       {"Ban System", ".ban / .unban loaded"},
-      {"Monitor Commands", "Use 'all' to monitor everyone"},
+      {"Monitor Commands", "Use 'all' to monitor everyone (auto-adds new players)"},
       {"Killbrick Immunity", "Active – covers all parts in obby"},
       {"Silent Mode", "Toggle in Misc to hide commands"},
       {"Admin Pad", "Claims ONE pad and monitors it"},
@@ -1320,4 +1415,8 @@ task.spawn(function()
    end
 end)
 
-print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
+print("KOHLS ADMIN HOUSE X loaded.")
+print("Changes: .kick now sends ff/god for self and victim.")
+print("All monitoring modes (.anticrash all etc.) now auto‑add new players.")
+print("Anti‑jail now only sends individual unjails, no 'unjail others' fallback.")
+print("Press K to toggle GUI.")
