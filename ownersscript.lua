@@ -3,6 +3,7 @@
 -- Sequential: equip → drop → move → next (fast)
 -- Placements: 4 right arm, 2 torso, 1 head, 1 left arm
 -- Effects: reset, rainbowify, blind, smoke (no name)
+-- Self: ff, god, freeze me (anti‑crash will auto‑thaw)
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -448,10 +449,12 @@ local function KickPlayer(target)
    sendMessage("smoke " .. plr.Name, "System")
    task.wait(0.02)
 
-   -- 2. Protect self and lock victim (fast)
+   -- 2. Protect self (ff, god, freeze me) and lock victim (fast)
    sendMessage("ff " .. LocalPlayer.Name, "System")
    task.wait(0.01)
    sendMessage("god " .. LocalPlayer.Name, "System")
+   task.wait(0.01)
+   sendMessage("freeze me", "System")  -- anti‑crash will auto‑thaw
    task.wait(0.01)
    sendMessage("ff " .. plr.Name, "System")
    task.wait(0.01)
@@ -1095,7 +1098,7 @@ MiscTab:CreateButton({
       local function notify(title, text) pcall(function() StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 3 }) end) end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
-      notify(".kick", "8‑sword sequential (4 right arm, 2 torso, 1 head, 1 left arm)")
+      notify(".kick", "8‑sword sequential + freeze me (auto‑thaw)")
       notify(".afk", ".afk loaded")
       notify(".gearbanme", "Manual gearban")
       notify(".clr", "Deletes Part/Truss/Seat")
@@ -1118,7 +1121,7 @@ MiscTab:CreateButton({
       print("===== KOHLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – reset, rainbowify, blind, smoke, then drops and places 8 swords (4 right arm, 2 torso, 1 head, 1 left arm)")
+      print(".kick <partial> – reset, rainbowify, blind, smoke, freeze me (auto‑thaw), then drops and places 8 swords (4 right arm, 2 torso, 1 head, 1 left arm)")
       print(".gearbanme <partial> – manual gearban (portable)")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
       print(".clr – DELETE ONLY 'Part', 'Truss', 'Seat'")
@@ -1569,7 +1572,7 @@ task.spawn(function()
    task.wait(1.5)
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Full version loaded"},
-      {".kick", "8‑sword sequential (4 right arm, 2 torso, 1 head, 1 left arm) – no 'name'"},
+      {".kick", "8‑sword sequential + freeze me (auto‑thaw)"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
       {"Monitor commands", "Use 'all' for everyone"},
@@ -1582,4 +1585,4 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print(".kick now drops 8 LinkedSwords sequentially (4 right arm, 2 torso, 1 head, 1 left arm) – effects: reset, rainbowify, blind, smoke (no name).")
+print(".kick now drops 8 LinkedSwords sequentially (4 right arm, 2 torso, 1 head, 1 left arm) and sends 'freeze me' (auto‑thaw by anti‑crash).")
