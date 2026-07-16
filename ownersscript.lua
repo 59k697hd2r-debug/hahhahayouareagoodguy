@@ -2,9 +2,7 @@
 -- KOHLS ADMIN HOUSE X – FULL (8‑SWORD KICK)
 -- Sequential: equip → drop → move → next (fast)
 -- Placements: 4 right arm, 2 torso, 1 head, 1 left arm
--- Effects: reset, rainbowify, blind, smoke (no name)
--- Self: ff, god, freeze me (auto‑thaw after 3.5s, then reset self & victim)
--- Full killbrick immunity included
+-- Updated kick timing and commands (reset, rainbowify, ungear)
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -430,7 +428,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== SEQUENTIAL .kick (8 swords, 4 right arm, 2 torso, 1 head, 1 left arm) =====
+-- ===== UPDATED .kick (8 swords, new timing & commands) =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    local plr = resolveTarget(target)
@@ -440,17 +438,15 @@ local function KickPlayer(target)
    end
    afkRunning = true
 
-   -- 1. Extra victim effects (reset, rainbowify, blind, smoke – no "name")
-   sendMessage("reset " .. plr.Name, "System")
-   task.wait(0.02)
-   sendMessage("rainbowify " .. plr.Name, "System")
+   -- 1. Initial victim effects (no god, no rainbowify yet)
+   sendMessage("ff " .. plr.Name, "System")
    task.wait(0.02)
    sendMessage("blind " .. plr.Name, "System")
    task.wait(0.02)
    sendMessage("smoke " .. plr.Name, "System")
    task.wait(0.02)
 
-   -- 2. Protect self (ff, god) and disable anti‑crash to freeze ourselves safely
+   -- 2. Protect self and disable anti‑crash to freeze ourselves safely
    local oldAntiCrash = antiCrashSelfEnabled
    antiCrashSelfEnabled = false
 
@@ -460,35 +456,39 @@ local function KickPlayer(target)
    task.wait(0.01)
    sendMessage("freeze me", "System")  -- freeze ourselves
 
-   -- We'll thaw after 3.5 seconds, then send resets after an additional 1.5 seconds
-   local thawTimer = task.spawn(function()
-      task.wait(3.0) -- keep frozen during the drop sequence
+   -- 3. Schedule thaw after 3 seconds
+   local freezeStart = tick()
+   task.spawn(function()
+      local elapsed = tick() - freezeStart
+      if elapsed < 3 then
+         task.wait(3 - elapsed)
+      end
       sendMessage("thaw me", "System")
-      antiCrashSelfEnabled = oldAntiCrash  -- re‑enable anti‑crash after thaw
-
-      -- After 1.5 seconds, send reset commands
-      task.wait(1.0)
-      sendMessage("reset " .. LocalPlayer.Name, "System")
-      sendMessage("reset " .. plr.Name, "System")
+      antiCrashSelfEnabled = oldAntiCrash
    end)
 
-   -- 3. Lock victim (fast)
-   sendMessage("ff " .. plr.Name, "System")
-   task.wait(0.01)
-   sendMessage("god " .. plr.Name, "System")
-   task.wait(0.01)
+   -- 4. Wait 0.2s then send reset victim
+   task.wait(0.2)
+   sendMessage("reset " .. plr.Name, "System")
+
+   -- 5. Wait 0.5s more (total 0.7s from freeze) then send rainbowify and ungear
+   task.wait(0.5)
+   sendMessage("rainbowify " .. plr.Name, "System")
+   sendMessage("ungear " .. plr.Name, "System")
+
+   -- 6. Lock victim (freeze and size nan)
    sendMessage("freeze " .. plr.Name, "System")
    task.wait(0.01)
    sendMessage("size " .. plr.Name .. " nan", "System")
    task.wait(0.01)
 
-   -- 4. Give 8 swords quickly
+   -- 7. Give 8 swords quickly
    for i = 1, 8 do
       sendMessage("sword", "System")
       task.wait(0.02)
    end
 
-   -- 5. Wait for at least 8 swords in backpack (up to 2 seconds)
+   -- 8. Wait for at least 8 swords in backpack (up to 2 seconds)
    local backpack = LocalPlayer.Backpack
    local swords = {}
    for waitCount = 1, 40 do
@@ -506,17 +506,14 @@ local function KickPlayer(target)
    end
    if #swords == 0 then
       print("[Kick] No LinkedSword found.")
-      -- clean up: thaw and restore anti‑crash, then resets
+      -- Ensure thaw (in case the timer hasn't fired yet)
       sendMessage("thaw me", "System")
       antiCrashSelfEnabled = oldAntiCrash
-      task.wait(1.5)
-      sendMessage("reset " .. LocalPlayer.Name, "System")
-      sendMessage("reset " .. plr.Name, "System")
       afkRunning = false
       return
    end
 
-   -- 6. Get victim's HRP
+   -- 9. Get victim's HRP
    local victimHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
    if not victimHRP then
       print("[Kick] Victim has no HRP, dropping at origin.")
@@ -542,17 +539,14 @@ local function KickPlayer(target)
             unanchorAll(equipped)
          end
       end
-      -- thaw and restore, then resets
+      -- Thaw if not already
       sendMessage("thaw me", "System")
       antiCrashSelfEnabled = oldAntiCrash
-      task.wait(1.5)
-      sendMessage("reset " .. LocalPlayer.Name, "System")
-      sendMessage("reset " .. plr.Name, "System")
       afkRunning = false
       return
    end
 
-   -- 7. Define offsets: 4 right arm, 2 torso, 1 head, 1 left arm
+   -- 10. Define offsets: 4 right arm, 2 torso, 1 head, 1 left arm
    local offsets = {
       CFrame.new(0, 2.5, 0),      -- Head
       CFrame.new(-1.5, 1, 0),     -- Left arm
@@ -564,15 +558,12 @@ local function KickPlayer(target)
       CFrame.new(1.5, 0.5, -0.5)  -- Right arm lower back
    }
 
-   -- 8. Process each sword sequentially (equip → drop → break welds → move → unanchor → next)
+   -- 11. Process each sword sequentially (equip → drop → break welds → move → unanchor → next)
    local char = LocalPlayer.Character
    if not char then
       print("[Kick] No character.")
       sendMessage("thaw me", "System")
       antiCrashSelfEnabled = oldAntiCrash
-      task.wait(1.5)
-      sendMessage("reset " .. LocalPlayer.Name, "System")
-      sendMessage("reset " .. plr.Name, "System")
       afkRunning = false
       return
    end
@@ -581,19 +572,13 @@ local function KickPlayer(target)
       print("[Kick] No Humanoid.")
       sendMessage("thaw me", "System")
       antiCrashSelfEnabled = oldAntiCrash
-      task.wait(1.5)
-      sendMessage("reset " .. LocalPlayer.Name, "System")
-      sendMessage("reset " .. plr.Name, "System")
       afkRunning = false
       return
    end
 
    for i, sword in ipairs(swords) do
-      -- Equip
       humanoid:EquipTool(sword)
       task.wait(0.01)
-
-      -- Wait for tool in character
       local equipped = nil
       for j = 1, 5 do
          equipped = char:FindFirstChild("LinkedSword")
@@ -604,38 +589,22 @@ local function KickPlayer(target)
          print("[Kick] Failed to equip sword #" .. i)
          continue
       end
-
-      -- Drop to workspace
       equipped.Parent = Workspace
       task.wait(0.01)
-
-      -- Break all welds (prevents player teleport)
       breakWelds(equipped)
-
-      -- Move to the corresponding offset
       local offset = offsets[i] or offsets[#offsets]
       local targetCFrame = victimHRP.CFrame * offset
       moveToolWithSyncMove(equipped, targetCFrame)
-
-      -- Unanchor
       unanchorAll(equipped)
-      task.wait(0.01)  -- minimal gap before next sword
+      task.wait(0.01)
    end
 
-   -- Ensure thaw and restore anti‑crash (the timer will also do this, but do it here to be safe)
+   -- Ensure thaw (in case the timer hasn't fired)
    sendMessage("thaw me", "System")
    antiCrashSelfEnabled = oldAntiCrash
-   -- Cancel the timer since we already thawed
-   task.cancel(thawTimer)
-   -- Now schedule resets after 1.5 seconds
-   task.spawn(function()
-      task.wait(1.5)
-      sendMessage("reset " .. LocalPlayer.Name, "System")
-      sendMessage("reset " .. plr.Name, "System")
-   end)
 
    afkRunning = false
-   print("[Kick] Completed for " .. plr.Name .. " – 8 swords placed (4 right arm, 2 torso, 1 head, 1 left arm).")
+   print("[Kick] Completed for " .. plr.Name .. " – 8 swords placed.")
 end
 
 -- .gearbanme
@@ -663,7 +632,6 @@ local function GearbanManual(target)
 end
 
 -- ===== CLEAR FUNCTIONS =====
--- .clr
 local function clearAll()
    if not clrEnabled then print("[.clr] Disabled.") return end
    clrStop = false
@@ -704,7 +672,6 @@ local function clearAll()
    end
 end
 
--- .adminclr
 local function adminClear()
    local endpoint = getSyncAPI()
    if not endpoint then print("[.adminclr] Building Tools not found.") return end
@@ -731,7 +698,6 @@ local function adminClear()
    print("[.adminclr] Removed " .. total .. " instances.")
 end
 
--- .workspaceclr
 local function workspaceClear()
    local endpoint = getSyncAPI()
    if not endpoint then print("[.workspaceclr] Building Tools not found.") return end
@@ -755,7 +721,6 @@ local function workspaceClear()
    print("[.workspaceclr] Removed " .. total .. " instances.")
 end
 
--- .trollclr
 local function trollClear()
    local endpoint = getSyncAPI()
    if not endpoint then
@@ -1149,7 +1114,7 @@ MiscTab:CreateButton({
       local function notify(title, text) pcall(function() StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 3 }) end) end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
-      notify(".kick", "8‑sword sequential + freeze me (3.5s) + reset self & victim")
+      notify(".kick", "8‑sword + reset, rainbowify, ungear (delayed)")
       notify(".afk", ".afk loaded")
       notify(".gearbanme", "Manual gearban")
       notify(".clr", "Deletes Part/Truss/Seat")
@@ -1172,7 +1137,7 @@ MiscTab:CreateButton({
       print("===== KOHLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – reset, rainbowify, blind, smoke, freeze me (3.5s), auto‑thaw, then after 1.5s resets self & victim")
+      print(".kick <partial> – ff, blind, smoke → freeze self (3s) → 0.2s reset victim → 0.5s rainbowify + ungear → freeze victim → size nan → drop 8 swords")
       print(".gearbanme <partial> – manual gearban (portable)")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
       print(".clr – DELETE ONLY 'Part', 'Truss', 'Seat'")
@@ -1623,7 +1588,7 @@ task.spawn(function()
    task.wait(1.5)
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Full version loaded"},
-      {".kick", "8‑sword sequential + freeze me (3.5s) + reset self & victim"},
+      {".kick", "8‑sword + reset/rainbowify/ungear (delayed)"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
       {"Monitor commands", "Use 'all' for everyone"},
@@ -1636,4 +1601,4 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print(".kick now drops 8 LinkedSwords sequentially (4 right arm, 2 torso, 1 head, 1 left arm), freezes you for 3.5s, then after thaw + 1.5s sends reset self & victim.")
+print(".kick: ff, blind, smoke → freeze self (3s) → 0.2s reset victim → 0.5s rainbowify + ungear victim → freeze/size → drop 8 swords.")
