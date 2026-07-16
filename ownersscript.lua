@@ -3,7 +3,8 @@
 -- Sequential: equip → drop → move → next (fast)
 -- Placements: 4 right arm, 2 torso, 1 head, 1 left arm
 -- Effects: reset, rainbowify, blind, smoke (no name)
--- Self: ff, god, freeze me (anti‑crash will auto‑thaw)
+-- Self: ff, god, freeze me (auto‑thaw after 2.5s)
+-- Full killbrick immunity included
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -449,13 +450,24 @@ local function KickPlayer(target)
    sendMessage("smoke " .. plr.Name, "System")
    task.wait(0.02)
 
-   -- 2. Protect self (ff, god, freeze me) and lock victim (fast)
+   -- 2. Protect self (ff, god) and disable anti‑crash to freeze ourselves safely
+   local oldAntiCrash = antiCrashSelfEnabled
+   antiCrashSelfEnabled = false
+
    sendMessage("ff " .. LocalPlayer.Name, "System")
    task.wait(0.01)
    sendMessage("god " .. LocalPlayer.Name, "System")
    task.wait(0.01)
-   sendMessage("freeze me", "System")  -- anti‑crash will auto‑thaw
-   task.wait(0.01)
+   sendMessage("freeze me", "System")  -- freeze ourselves
+
+   -- We'll thaw after the sword dropping is done (we'll schedule a thaw after ~2.5s)
+   local thawTimer = task.spawn(function()
+      task.wait(2.5)  -- keep frozen during the drop sequence
+      sendMessage("thaw me", "System")
+      antiCrashSelfEnabled = oldAntiCrash  -- re‑enable anti‑crash after thaw
+   end)
+
+   -- 3. Lock victim (fast)
    sendMessage("ff " .. plr.Name, "System")
    task.wait(0.01)
    sendMessage("god " .. plr.Name, "System")
@@ -465,13 +477,13 @@ local function KickPlayer(target)
    sendMessage("size " .. plr.Name .. " nan", "System")
    task.wait(0.01)
 
-   -- 3. Give 8 swords quickly
+   -- 4. Give 8 swords quickly
    for i = 1, 8 do
       sendMessage("sword", "System")
       task.wait(0.02)
    end
 
-   -- 4. Wait for at least 8 swords in backpack (up to 2 seconds)
+   -- 5. Wait for at least 8 swords in backpack (up to 2 seconds)
    local backpack = LocalPlayer.Backpack
    local swords = {}
    for waitCount = 1, 40 do
@@ -489,11 +501,14 @@ local function KickPlayer(target)
    end
    if #swords == 0 then
       print("[Kick] No LinkedSword found.")
+      -- clean up: thaw and restore anti‑crash
+      sendMessage("thaw me", "System")
+      antiCrashSelfEnabled = oldAntiCrash
       afkRunning = false
       return
    end
 
-   -- 5. Get victim's HRP
+   -- 6. Get victim's HRP
    local victimHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
    if not victimHRP then
       print("[Kick] Victim has no HRP, dropping at origin.")
@@ -519,11 +534,14 @@ local function KickPlayer(target)
             unanchorAll(equipped)
          end
       end
+      -- thaw and restore
+      sendMessage("thaw me", "System")
+      antiCrashSelfEnabled = oldAntiCrash
       afkRunning = false
       return
    end
 
-   -- 6. Define offsets: 4 right arm, 2 torso, 1 head, 1 left arm
+   -- 7. Define offsets: 4 right arm, 2 torso, 1 head, 1 left arm
    local offsets = {
       CFrame.new(0, 2.5, 0),      -- Head
       CFrame.new(-1.5, 1, 0),     -- Left arm
@@ -535,16 +553,20 @@ local function KickPlayer(target)
       CFrame.new(1.5, 0.5, -0.5)  -- Right arm lower back
    }
 
-   -- 7. Process each sword sequentially (equip → drop → break welds → move → unanchor → next)
+   -- 8. Process each sword sequentially (equip → drop → break welds → move → unanchor → next)
    local char = LocalPlayer.Character
    if not char then
       print("[Kick] No character.")
+      sendMessage("thaw me", "System")
+      antiCrashSelfEnabled = oldAntiCrash
       afkRunning = false
       return
    end
    local humanoid = char:FindFirstChildOfClass("Humanoid")
    if not humanoid then
       print("[Kick] No Humanoid.")
+      sendMessage("thaw me", "System")
+      antiCrashSelfEnabled = oldAntiCrash
       afkRunning = false
       return
    end
@@ -582,6 +604,12 @@ local function KickPlayer(target)
       unanchorAll(equipped)
       task.wait(0.01)  -- minimal gap before next sword
    end
+
+   -- Ensure thaw and restore anti‑crash (the timer will also do this, but do it here to be safe)
+   sendMessage("thaw me", "System")
+   antiCrashSelfEnabled = oldAntiCrash
+   -- Cancel the timer since we already thawed
+   task.cancel(thawTimer)
 
    afkRunning = false
    print("[Kick] Completed for " .. plr.Name .. " – 8 swords placed (4 right arm, 2 torso, 1 head, 1 left arm).")
@@ -1148,7 +1176,7 @@ MiscTab:CreateButton({
    end
 })
 
--- ===== KILLBRICK IMMUNITY =====
+-- ===== KILLBRICK IMMUNITY (FULL) =====
 local killbrickEnabled = true
 local originalProps = {}
 local function storeOriginalProperties(part)
@@ -1585,4 +1613,5 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print(".kick now drops 8 LinkedSwords sequentially (4 right arm, 2 torso, 1 head, 1 left arm) and sends 'freeze me' (auto‑thaw by anti‑crash).")
+print(".kick now drops 8 LinkedSwords sequentially (4 right arm, 2 torso, 1 head, 1 left arm) and freezes you for ~2.5s (auto‑thaw) to prevent teleportation.")
+print("Killbrick immunity is active (toggle in Misc).")
