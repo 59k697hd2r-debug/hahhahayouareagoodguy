@@ -3,7 +3,7 @@
 -- Sequential: equip → drop → move → next (fast)
 -- Placements: 4 right arm, 2 torso, 1 head, 1 left arm
 -- Effects: reset, rainbowify, blind, smoke (no name)
--- Self: ff, god, freeze me (auto‑thaw after 2.5s)
+-- Self: ff, god, freeze me (auto‑thaw after 3.5s, then reset self & victim)
 -- Full killbrick immunity included
 -- ============================================
 
@@ -460,11 +460,16 @@ local function KickPlayer(target)
    task.wait(0.01)
    sendMessage("freeze me", "System")  -- freeze ourselves
 
-   -- We'll thaw after the sword dropping is done (we'll schedule a thaw after ~2.5s)
+   -- We'll thaw after 3.5 seconds, then send resets after an additional 1.5 seconds
    local thawTimer = task.spawn(function()
-      task.wait(2.5)  -- keep frozen during the drop sequence
+      task.wait(3.0) -- keep frozen during the drop sequence
       sendMessage("thaw me", "System")
       antiCrashSelfEnabled = oldAntiCrash  -- re‑enable anti‑crash after thaw
+
+      -- After 1.5 seconds, send reset commands
+      task.wait(1.0)
+      sendMessage("reset " .. LocalPlayer.Name, "System")
+      sendMessage("reset " .. plr.Name, "System")
    end)
 
    -- 3. Lock victim (fast)
@@ -501,9 +506,12 @@ local function KickPlayer(target)
    end
    if #swords == 0 then
       print("[Kick] No LinkedSword found.")
-      -- clean up: thaw and restore anti‑crash
+      -- clean up: thaw and restore anti‑crash, then resets
       sendMessage("thaw me", "System")
       antiCrashSelfEnabled = oldAntiCrash
+      task.wait(1.5)
+      sendMessage("reset " .. LocalPlayer.Name, "System")
+      sendMessage("reset " .. plr.Name, "System")
       afkRunning = false
       return
    end
@@ -534,9 +542,12 @@ local function KickPlayer(target)
             unanchorAll(equipped)
          end
       end
-      -- thaw and restore
+      -- thaw and restore, then resets
       sendMessage("thaw me", "System")
       antiCrashSelfEnabled = oldAntiCrash
+      task.wait(1.5)
+      sendMessage("reset " .. LocalPlayer.Name, "System")
+      sendMessage("reset " .. plr.Name, "System")
       afkRunning = false
       return
    end
@@ -559,6 +570,9 @@ local function KickPlayer(target)
       print("[Kick] No character.")
       sendMessage("thaw me", "System")
       antiCrashSelfEnabled = oldAntiCrash
+      task.wait(1.5)
+      sendMessage("reset " .. LocalPlayer.Name, "System")
+      sendMessage("reset " .. plr.Name, "System")
       afkRunning = false
       return
    end
@@ -567,6 +581,9 @@ local function KickPlayer(target)
       print("[Kick] No Humanoid.")
       sendMessage("thaw me", "System")
       antiCrashSelfEnabled = oldAntiCrash
+      task.wait(1.5)
+      sendMessage("reset " .. LocalPlayer.Name, "System")
+      sendMessage("reset " .. plr.Name, "System")
       afkRunning = false
       return
    end
@@ -610,6 +627,12 @@ local function KickPlayer(target)
    antiCrashSelfEnabled = oldAntiCrash
    -- Cancel the timer since we already thawed
    task.cancel(thawTimer)
+   -- Now schedule resets after 1.5 seconds
+   task.spawn(function()
+      task.wait(1.5)
+      sendMessage("reset " .. LocalPlayer.Name, "System")
+      sendMessage("reset " .. plr.Name, "System")
+   end)
 
    afkRunning = false
    print("[Kick] Completed for " .. plr.Name .. " – 8 swords placed (4 right arm, 2 torso, 1 head, 1 left arm).")
@@ -1126,7 +1149,7 @@ MiscTab:CreateButton({
       local function notify(title, text) pcall(function() StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 3 }) end) end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
-      notify(".kick", "8‑sword sequential + freeze me (auto‑thaw)")
+      notify(".kick", "8‑sword sequential + freeze me (3.5s) + reset self & victim")
       notify(".afk", ".afk loaded")
       notify(".gearbanme", "Manual gearban")
       notify(".clr", "Deletes Part/Truss/Seat")
@@ -1149,7 +1172,7 @@ MiscTab:CreateButton({
       print("===== KOHLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – reset, rainbowify, blind, smoke, freeze me (auto‑thaw), then drops and places 8 swords (4 right arm, 2 torso, 1 head, 1 left arm)")
+      print(".kick <partial> – reset, rainbowify, blind, smoke, freeze me (3.5s), auto‑thaw, then after 1.5s resets self & victim")
       print(".gearbanme <partial> – manual gearban (portable)")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
       print(".clr – DELETE ONLY 'Part', 'Truss', 'Seat'")
@@ -1176,7 +1199,7 @@ MiscTab:CreateButton({
    end
 })
 
--- ===== KILLBRICK IMMUNITY (FULL) =====
+-- ===== KILLBRICK IMMUNITY =====
 local killbrickEnabled = true
 local originalProps = {}
 local function storeOriginalProperties(part)
@@ -1600,7 +1623,7 @@ task.spawn(function()
    task.wait(1.5)
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Full version loaded"},
-      {".kick", "8‑sword sequential + freeze me (auto‑thaw)"},
+      {".kick", "8‑sword sequential + freeze me (3.5s) + reset self & victim"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
       {"Monitor commands", "Use 'all' for everyone"},
@@ -1613,5 +1636,4 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print(".kick now drops 8 LinkedSwords sequentially (4 right arm, 2 torso, 1 head, 1 left arm) and freezes you for ~2.5s (auto‑thaw) to prevent teleportation.")
-print("Killbrick immunity is active (toggle in Misc).")
+print(".kick now drops 8 LinkedSwords sequentially (4 right arm, 2 torso, 1 head, 1 left arm), freezes you for 3.5s, then after thaw + 1.5s sends reset self & victim.")
