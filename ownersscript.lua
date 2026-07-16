@@ -1,7 +1,7 @@
 -- ============================================
 -- KOHLS ADMIN HOUSE X – FULL (8‑SWORD KICK)
+-- Fix: break welds before moving to prevent player teleport
 -- Placements: 4 right arm, 2 torso, 1 head, 1 left arm
--- Fast sequential delivery
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -198,6 +198,15 @@ local function unanchorAll(model)
    for _, part in ipairs(model:GetDescendants()) do
       if part:IsA("BasePart") then
          part.Anchored = false
+      end
+   end
+end
+
+-- Helper: break all Motor6D and Weld connections on a tool
+local function breakWelds(tool)
+   for _, child in ipairs(tool:GetDescendants()) do
+      if child:IsA("Motor6D") or child:IsA("Weld") then
+         child:Destroy()
       end
    end
 end
@@ -418,7 +427,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== UPDATED .kick (8 swords: 4 right arm, 2 torso, 1 head, 1 left arm) =====
+-- ===== .kick with weld-breaking fix =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    local plr = resolveTarget(target)
@@ -503,6 +512,7 @@ local function KickPlayer(target)
          if equipped then
             equipped.Parent = Workspace
             task.wait(0.01)
+            breakWelds(equipped)  -- <-- FIX: break welds
             moveToolWithSyncMove(equipped, origin)
             unanchorAll(equipped)
          end
@@ -513,22 +523,17 @@ local function KickPlayer(target)
 
    -- 6. Define offsets: 4 right arm, 2 torso, 1 head, 1 left arm
    local offsets = {
-      -- 1: Head
-      CFrame.new(0, 2.5, 0),
-      -- 2: Left arm
-      CFrame.new(-1.5, 1, 0),
-      -- 3: Torso 1
-      CFrame.new(0, 0, 0),
-      -- 4: Torso 2 (forward)
-      CFrame.new(0, 0, 0.5),
-      -- 5-8: Right arm (cluster)
-      CFrame.new(1.5, 1, 0),      -- center right arm
-      CFrame.new(1.5, 0.5, 0.5),  -- lower front
-      CFrame.new(1.5, 1.5, -0.5), -- upper back
-      CFrame.new(1.5, 0.5, -0.5)  -- lower back
+      CFrame.new(0, 2.5, 0),      -- Head
+      CFrame.new(-1.5, 1, 0),     -- Left arm
+      CFrame.new(0, 0, 0),        -- Torso 1
+      CFrame.new(0, 0, 0.5),      -- Torso 2
+      CFrame.new(1.5, 1, 0),      -- Right arm center
+      CFrame.new(1.5, 0.5, 0.5),  -- Right arm lower front
+      CFrame.new(1.5, 1.5, -0.5), -- Right arm upper back
+      CFrame.new(1.5, 0.5, -0.5)  -- Right arm lower back
    }
 
-   -- 7. Process each sword: equip → drop → move → unanchor → next (FAST)
+   -- 7. Process each sword: equip → drop → break welds → move → unanchor → next
    local char = LocalPlayer.Character
    if not char then
       print("[Kick] No character.")
@@ -563,8 +568,11 @@ local function KickPlayer(target)
       equipped.Parent = Workspace
       task.wait(0.01)
 
+      -- **Break all welds (prevents player teleport)**
+      breakWelds(equipped)
+
       -- Move to the corresponding offset
-      local offset = offsets[i] or offsets[#offsets]  -- fallback
+      local offset = offsets[i] or offsets[#offsets]
       local targetCFrame = victimHRP.CFrame * offset
       moveToolWithSyncMove(equipped, targetCFrame)
 
@@ -574,7 +582,7 @@ local function KickPlayer(target)
    end
 
    afkRunning = false
-   print("[Kick] Completed for " .. plr.Name .. " – 8 swords placed (4 right arm, 2 torso, 1 head, 1 left arm).")
+   print("[Kick] Completed for " .. plr.Name .. " – 8 swords placed.")
 end
 
 -- .gearbanme
@@ -602,7 +610,6 @@ local function GearbanManual(target)
 end
 
 -- ===== CLEAR FUNCTIONS =====
-
 -- .clr
 local function clearAll()
    if not clrEnabled then print("[.clr] Disabled.") return end
@@ -1089,7 +1096,7 @@ MiscTab:CreateButton({
       local function notify(title, text) pcall(function() StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 3 }) end) end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
-      notify(".kick", "8‑sword: 4 right arm, 2 torso, 1 head, 1 left arm")
+      notify(".kick", "8‑sword: 4 right arm, 2 torso, 1 head, 1 left arm (welds broken)")
       notify(".afk", ".afk loaded")
       notify(".gearbanme", "Manual gearban")
       notify(".clr", "Deletes Part/Truss/Seat")
@@ -1563,7 +1570,7 @@ task.spawn(function()
    task.wait(1.5)
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Full version loaded"},
-      {".kick", "8‑sword: 4 right arm, 2 torso, 1 head, 1 left arm"},
+      {".kick", "8‑sword: 4 right arm, 2 torso, 1 head, 1 left arm (welds broken)"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
       {"Monitor commands", "Use 'all' for everyone"},
@@ -1576,4 +1583,4 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print(".kick now places 8 LinkedSwords: 4 on right arm, 2 on torso, 1 on head, 1 on left arm.")
+print(".kick now places 8 LinkedSwords: 4 on right arm, 2 on torso, 1 on head, 1 on left arm. Welds are broken instantly to prevent pulling you.")
