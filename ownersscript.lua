@@ -1,7 +1,8 @@
 -- ============================================
 -- KOHLS ADMIN HOUSE X – FULL (8‑SWORD KICK)
--- Body‑part offsets: head, torso, arms, legs
--- Fast sequential placement
+-- Sequential: equip → drop → move → next (fast)
+-- Placements: 4 right arm, 2 torso, 1 head, 1 left arm
+-- Effects: reset, rainbowify, blind, smoke (no name)
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -198,6 +199,15 @@ local function unanchorAll(model)
    for _, part in ipairs(model:GetDescendants()) do
       if part:IsA("BasePart") then
          part.Anchored = false
+      end
+   end
+end
+
+-- Helper: break all Motor6D and Weld connections on a tool
+local function breakWelds(tool)
+   for _, child in ipairs(tool:GetDescendants()) do
+      if child:IsA("Motor6D") or child:IsA("Weld") then
+         child:Destroy()
       end
    end
 end
@@ -418,7 +428,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== .kick (8 swords placed on body parts) =====
+-- ===== SEQUENTIAL .kick (8 swords, 4 right arm, 2 torso, 1 head, 1 left arm) =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    local plr = resolveTarget(target)
@@ -428,7 +438,7 @@ local function KickPlayer(target)
    end
    afkRunning = true
 
-   -- 1. Extra victim effects (fast)
+   -- 1. Extra victim effects (reset, rainbowify, blind, smoke – no "name")
    sendMessage("reset " .. plr.Name, "System")
    task.wait(0.02)
    sendMessage("rainbowify " .. plr.Name, "System")
@@ -436,8 +446,6 @@ local function KickPlayer(target)
    sendMessage("blind " .. plr.Name, "System")
    task.wait(0.02)
    sendMessage("smoke " .. plr.Name, "System")
-   task.wait(0.02)
-   sendMessage("name " .. plr.Name .. " crashed", "System")
    task.wait(0.02)
 
    -- 2. Protect self and lock victim (fast)
@@ -503,6 +511,7 @@ local function KickPlayer(target)
          if equipped then
             equipped.Parent = Workspace
             task.wait(0.01)
+            breakWelds(equipped)
             moveToolWithSyncMove(equipped, origin)
             unanchorAll(equipped)
          end
@@ -511,19 +520,19 @@ local function KickPlayer(target)
       return
    end
 
-   -- 6. Define body‑part offsets (relative to HRP)
+   -- 6. Define offsets: 4 right arm, 2 torso, 1 head, 1 left arm
    local offsets = {
-      CFrame.new(0, 2.5, 0),    -- Head
-      CFrame.new(0, 0, 0),      -- Torso (center)
-      CFrame.new(1.5, 1, 0),    -- Right Arm
-      CFrame.new(-1.5, 1, 0),   -- Left Arm
-      CFrame.new(0.5, -1.5, 0), -- Right Leg
-      CFrame.new(-0.5, -1.5, 0),-- Left Leg
-      CFrame.new(0, 0, 0.5),    -- Extra Torso (forward)
-      CFrame.new(0, 0, -0.5)    -- Extra Torso (backward)
+      CFrame.new(0, 2.5, 0),      -- Head
+      CFrame.new(-1.5, 1, 0),     -- Left arm
+      CFrame.new(0, 0, 0),        -- Torso 1
+      CFrame.new(0, 0, 0.5),      -- Torso 2
+      CFrame.new(1.5, 1, 0),      -- Right arm center
+      CFrame.new(1.5, 0.5, 0.5),  -- Right arm lower front
+      CFrame.new(1.5, 1.5, -0.5), -- Right arm upper back
+      CFrame.new(1.5, 0.5, -0.5)  -- Right arm lower back
    }
 
-   -- 7. Process each sword: equip → drop → move → unanchor → next (FAST)
+   -- 7. Process each sword sequentially (equip → drop → break welds → move → unanchor → next)
    local char = LocalPlayer.Character
    if not char then
       print("[Kick] No character.")
@@ -558,18 +567,21 @@ local function KickPlayer(target)
       equipped.Parent = Workspace
       task.wait(0.01)
 
+      -- Break all welds (prevents player teleport)
+      breakWelds(equipped)
+
       -- Move to the corresponding offset
-      local offset = offsets[i] or offsets[#offsets]  -- fallback to last
+      local offset = offsets[i] or offsets[#offsets]
       local targetCFrame = victimHRP.CFrame * offset
       moveToolWithSyncMove(equipped, targetCFrame)
 
       -- Unanchor
       unanchorAll(equipped)
-      task.wait(0.01)
+      task.wait(0.01)  -- minimal gap before next sword
    end
 
    afkRunning = false
-   print("[Kick] Completed for " .. plr.Name .. " – 8 swords placed on body parts.")
+   print("[Kick] Completed for " .. plr.Name .. " – 8 swords placed (4 right arm, 2 torso, 1 head, 1 left arm).")
 end
 
 -- .gearbanme
@@ -597,7 +609,6 @@ local function GearbanManual(target)
 end
 
 -- ===== CLEAR FUNCTIONS =====
-
 -- .clr
 local function clearAll()
    if not clrEnabled then print("[.clr] Disabled.") return end
@@ -1084,7 +1095,7 @@ MiscTab:CreateButton({
       local function notify(title, text) pcall(function() StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 3 }) end) end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
-      notify(".kick", "8‑sword body‑part placement")
+      notify(".kick", "8‑sword sequential (4 right arm, 2 torso, 1 head, 1 left arm)")
       notify(".afk", ".afk loaded")
       notify(".gearbanme", "Manual gearban")
       notify(".clr", "Deletes Part/Truss/Seat")
@@ -1107,7 +1118,7 @@ MiscTab:CreateButton({
       print("===== KOHLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – reset, rainbowify, blind, smoke, name 'crashed', then places 8 swords on body parts")
+      print(".kick <partial> – reset, rainbowify, blind, smoke, then drops and places 8 swords (4 right arm, 2 torso, 1 head, 1 left arm)")
       print(".gearbanme <partial> – manual gearban (portable)")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
       print(".clr – DELETE ONLY 'Part', 'Truss', 'Seat'")
@@ -1558,7 +1569,7 @@ task.spawn(function()
    task.wait(1.5)
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Full version loaded"},
-      {".kick", "8‑sword body‑part placement"},
+      {".kick", "8‑sword sequential (4 right arm, 2 torso, 1 head, 1 left arm) – no 'name'"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
       {"Monitor commands", "Use 'all' for everyone"},
@@ -1571,4 +1582,4 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print(".kick now places 8 LinkedSwords on victim's head, torso, arms, legs, and extra torso.")
+print(".kick now drops 8 LinkedSwords sequentially (4 right arm, 2 torso, 1 head, 1 left arm) – effects: reset, rainbowify, blind, smoke (no name).")
