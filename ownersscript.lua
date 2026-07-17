@@ -1,12 +1,8 @@
 -- ============================================
--- KOHLS ADMIN HOUSE X – FINAL (1‑SWORD KICK)
+-- KOHLS ADMIN HOUSE X – CUSTOM KICK SEQUENCE
 -- ============================================
--- All original features + Building Tools repair.
--- Kick: sends "sword" once, waits up to 3s for it to appear,
---       equips, drops, moves to victim's HRP (offset 0,0,0),
---       then reset victim → rainbowify → smoke.
--- Partial matching: works on both display name AND username.
--- Ban monitor: correctly detects rejoins and kicks again.
+-- Kick: blind victim → freeze victim → size victim nan → freeze me → sword (grant) → equip → drop → move to victim HRP → thaw me
+-- All other features (monitors, clear, killbrick, loaders, pad claimer, troll, etc.) unchanged.
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -135,7 +131,7 @@ local function repairBuildingTools()
    humanoid:EquipTool(bt)
 end
 
--- ===== Partial matcher: matches display name first, then username =====
+-- Partial matcher: matches display name, then username
 local function resolveTarget(partial)
    if not partial or partial == "" then return nil end
    partial = string.lower(partial)
@@ -448,7 +444,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== 1‑SWORD KICK (sends "sword" once) =====
+-- ===== CUSTOM KICK SEQUENCE =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    afkRunning = true
@@ -459,55 +455,41 @@ local function KickPlayer(target)
          error("Invalid target.")
       end
 
-      -- 1. Initial victim effects (ff, blind, smoke)
-      sendMessage("ff " .. plr.Name, "System")
-      task.wait(0.02)
+      -- 1. blind victim
       sendMessage("blind " .. plr.Name, "System")
       task.wait(0.02)
-      sendMessage("smoke " .. plr.Name, "System")
+
+      -- 2. freeze victim
+      sendMessage("freeze " .. plr.Name, "System")
       task.wait(0.02)
 
-      -- 2. Protect self and disable anti‑crash to freeze ourselves safely
+      -- 3. size victim nan
+      sendMessage("size " .. plr.Name .. " nan", "System")
+      task.wait(0.02)
+
+      -- 4. freeze me (disable anti‑crash first)
       local oldAntiCrash = antiCrashSelfEnabled
       antiCrashSelfEnabled = false
+      sendMessage("freeze me", "System")
+      task.wait(0.02)
 
-      sendMessage("ff " .. LocalPlayer.Name, "System")
-      task.wait(0.01)
-      sendMessage("god " .. LocalPlayer.Name, "System")
-      task.wait(0.01)
-      sendMessage("freeze me", "System")  -- freeze ourselves
-
-      -- 3. Lock victim (freeze and size nan)
-      sendMessage("freeze " .. plr.Name, "System")
-      task.wait(0.01)
-      sendMessage("size " .. plr.Name .. " nan", "System")
-      task.wait(0.01)
-
-      -- 4. Send "sword" once and wait up to 3 seconds for it to appear
-      local backpack = LocalPlayer.Backpack
-      local sword = nil
+      -- 5. sword me (grant one LinkedSword)
       sendMessage("sword", "System")
       task.wait(0.1)
 
-      for i = 1, 30 do  -- 30 * 0.1 = 3 seconds
+      -- Wait up to 3 seconds for sword to appear
+      local backpack = LocalPlayer.Backpack
+      local sword = nil
+      for i = 1, 30 do
          sword = backpack:FindFirstChild("LinkedSword")
          if sword then break end
          task.wait(0.1)
       end
-
       if not sword then
          error("No LinkedSword found after waiting.")
       end
 
-      print("[Kick] Sword found.")
-
-      -- 5. Get victim's HRP
-      local victimHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-      if not victimHRP then
-         error("Victim has no HRP.")
-      end
-
-      -- 6. Equip the sword, drop it, and move it to the victim's HRP (offset 0,0,0)
+      -- 6. Equip, drop, move sword to victim's HRP
       local char = LocalPlayer.Character
       if not char then error("No character.") end
       local humanoid = char:FindFirstChildOfClass("Humanoid")
@@ -523,18 +505,16 @@ local function KickPlayer(target)
       equipped.Parent = Workspace
       task.wait(0.05)
       breakWelds(equipped)
+
+      local victimHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+      if not victimHRP then
+         error("Victim has no HRP.")
+      end
       local targetCFrame = victimHRP.CFrame * CFrame.new(0, 0, 0)  -- exactly on HRP
       moveToolWithSyncMove(equipped, targetCFrame)
       unanchorAll(equipped)
 
-      -- 7. After sword is placed: send reset victim, rainbowify + smoke
-      sendMessage("reset " .. plr.Name, "System")
-      task.wait(0.3)
-      sendMessage("rainbowify " .. plr.Name, "System")
-      task.wait(0.1)
-      sendMessage("smoke " .. plr.Name, "System")
-
-      -- 8. Thaw ourselves and re‑enable anti‑crash
+      -- 7. Thaw me and re‑enable anti‑crash
       sendMessage("thaw me", "System")
       antiCrashSelfEnabled = oldAntiCrash
       repairBuildingTools()
@@ -1094,7 +1074,7 @@ MiscTab:CreateButton({
       end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
-      notify(".kick", "1‑sword + reset/rainbowify/smoke")
+      notify(".kick", "Custom sequence: blind, freeze, size nan, freeze me, sword → move")
       notify(".afk", ".afk loaded")
       notify(".gearbanme", "Manual gearban")
       notify(".clr", "Deletes Part/Truss/Seat")
@@ -1117,7 +1097,7 @@ MiscTab:CreateButton({
       print("===== KOHLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – ff, blind, smoke → freeze self → freeze/size victim → drop 1 sword → reset victim → rainbowify + smoke")
+      print(".kick <partial> – blind victim → freeze victim → size nan victim → freeze me → sword → move to victim")
       print(".gearbanme <partial> – manual gearban (portable)")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
       print(".clr – DELETE ONLY 'Part', 'Truss', 'Seat'")
@@ -1576,7 +1556,7 @@ task.spawn(function()
    task.wait(1.5)
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Full version loaded"},
-      {".kick", "1‑sword + reset/rainbowify/smoke"},
+      {".kick", "Custom sequence: blind, freeze, size nan, freeze me, sword → move"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
       {"Monitor commands", "Use 'all' for everyone"},
@@ -1589,7 +1569,5 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print("Kick: ff, blind, smoke → freeze self → freeze/size victim → drop 1 sword → reset victim → rainbowify + smoke")
-print("Ban monitor now correctly detects rejoins and kicks them again.")
-print("Partial matching works on both display name and username.")
-print("Building Tools axes are repaired after every SyncAPI operation – no glitching.")
+print("Kick: blind victim → freeze victim → size nan victim → freeze me → sword me → move sword to victim.")
+print("All other features unchanged. Partial matching works on display name and username.")
