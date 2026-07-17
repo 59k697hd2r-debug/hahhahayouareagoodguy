@@ -2,9 +2,11 @@
 -- KOHLS ADMIN HOUSE X – FINAL (1‑SWORD KICK)
 -- ============================================
 -- All original features + Building Tools repair.
--- Kick: ff, blind, smoke for victim → freeze self → lock victim → drop 1 sword → reset victim → rainbowify + smoke.
--- Reliable sword acquisition: waits until a sword appears, no matter how long.
--- Ban monitor correctly detects rejoins (using CharacterAdded and PlayerAdded).
+-- Kick: sends "sword" once, waits up to 3s for it to appear,
+--       equips, drops, moves to victim's HRP (offset 0,0,0),
+--       then reset victim → rainbowify → smoke.
+-- Partial matching: works on both display name AND username.
+-- Ban monitor: correctly detects rejoins and kicks again.
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -133,7 +135,7 @@ local function repairBuildingTools()
    humanoid:EquipTool(bt)
 end
 
--- Partial matcher by display name
+-- ===== Partial matcher: matches display name first, then username =====
 local function resolveTarget(partial)
    if not partial or partial == "" then return nil end
    partial = string.lower(partial)
@@ -148,7 +150,7 @@ local function resolveTarget(partial)
    end
    if #matches == 1 then return matches[1]
    elseif #matches > 1 then
-      print("[PartialMatcher] Multiple matches, using first: " .. matches[1].Name)
+      print("[PartialMatcher] Multiple display matches, using first: " .. matches[1].Name)
       return matches[1]
    end
    for _, plr in ipairs(Players:GetPlayers()) do
@@ -446,7 +448,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== RELIABLE 1‑SWORD KICK =====
+-- ===== 1‑SWORD KICK (sends "sword" once) =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    afkRunning = true
@@ -481,36 +483,20 @@ local function KickPlayer(target)
       sendMessage("size " .. plr.Name .. " nan", "System")
       task.wait(0.01)
 
-      -- 4. Get one sword – wait until it appears, send extra if needed
+      -- 4. Send "sword" once and wait up to 3 seconds for it to appear
       local backpack = LocalPlayer.Backpack
       local sword = nil
-      local attempts = 0
-      local maxAttempts = 100  -- 5 seconds at 0.05s per loop
-
       sendMessage("sword", "System")
       task.wait(0.1)
 
-      while attempts < maxAttempts do
+      for i = 1, 30 do  -- 30 * 0.1 = 3 seconds
          sword = backpack:FindFirstChild("LinkedSword")
          if sword then break end
-         -- If not found, send another sword command
-         sendMessage("sword", "System")
-         task.wait(0.05)
-         attempts = attempts + 1
-      end
-
-      -- Final check: if still not found, try one more time and wait
-      if not sword then
-         sendMessage("sword", "System")
-         for i = 1, 20 do
-            sword = backpack:FindFirstChild("LinkedSword")
-            if sword then break end
-            task.wait(0.1)
-         end
+         task.wait(0.1)
       end
 
       if not sword then
-         error("No LinkedSword found after multiple attempts.")
+         error("No LinkedSword found after waiting.")
       end
 
       print("[Kick] Sword found.")
@@ -747,9 +733,8 @@ local function trollClear()
    repairBuildingTools()
 end
 
--- ===== BAN MONITOR (fix: detect rejoins) =====
+-- ===== BAN MONITOR (detects rejoins) =====
 task.spawn(function()
-   -- Helper to kick a player when they rejoin
    local function kickOnRejoin(username)
       local plr = resolveTarget(username)
       if plr and plr ~= "all" then
@@ -1606,4 +1591,5 @@ end)
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
 print("Kick: ff, blind, smoke → freeze self → freeze/size victim → drop 1 sword → reset victim → rainbowify + smoke")
 print("Ban monitor now correctly detects rejoins and kicks them again.")
+print("Partial matching works on both display name and username.")
 print("Building Tools axes are repaired after every SyncAPI operation – no glitching.")
