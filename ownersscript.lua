@@ -1,8 +1,8 @@
 -- ============================================
--- KOHLS ADMIN HOUSE X – CUSTOM KICK SEQUENCE
+-- KOHLS ADMIN HOUSE X – FINAL (3‑SWORD KICK)
 -- ============================================
--- Kick: blind victim → freeze victim → size victim nan → freeze me → sword (grant) → equip → drop → move to victim HRP → thaw me
--- All other features (monitors, clear, killbrick, loaders, pad claimer, troll, etc.) unchanged.
+-- Kick: blind victim → freeze victim → size nan victim → freeze me → sword ×3 → equip/drop/move each to victim's HRP (stacked) → thaw me
+-- All original features (monitors, clear, killbrick, loaders, pad claimer, troll, etc.) unchanged.
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -444,7 +444,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== CUSTOM KICK SEQUENCE =====
+-- ===== CUSTOM KICK SEQUENCE (3 SWORDS) =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    afkRunning = true
@@ -467,54 +467,88 @@ local function KickPlayer(target)
       sendMessage("size " .. plr.Name .. " nan", "System")
       task.wait(0.02)
 
-      -- 4. freeze me (disable anti‑crash first)
+      -- 4. freeze me (disable anti‑crash)
       local oldAntiCrash = antiCrashSelfEnabled
       antiCrashSelfEnabled = false
       sendMessage("freeze me", "System")
       task.wait(0.02)
 
-      -- 5. sword me (grant one LinkedSword)
-      sendMessage("sword", "System")
-      task.wait(0.1)
-
-      -- Wait up to 3 seconds for sword to appear
-      local backpack = LocalPlayer.Backpack
-      local sword = nil
-      for i = 1, 30 do
-         sword = backpack:FindFirstChild("LinkedSword")
-         if sword then break end
-         task.wait(0.1)
+      -- 5. sword me three times
+      for i = 1, 3 do
+         sendMessage("sword", "System")
+         task.wait(0.05)
       end
-      if not sword then
+
+      -- Wait up to 3 seconds for swords to appear
+      local backpack = LocalPlayer.Backpack
+      local swords = {}
+      local attempts = 0
+      while attempts < 30 do  -- 3 seconds
+         local found = {}
+         for _, child in ipairs(backpack:GetChildren()) do
+            if child.Name == "LinkedSword" then
+               table.insert(found, child)
+            end
+         end
+         if #found >= 3 then
+            swords = found
+            break
+         end
+         -- If we have some but not all, try sending more sword commands
+         if #found > 0 then
+            sendMessage("sword", "System")
+            task.wait(0.05)
+         end
+         task.wait(0.1)
+         attempts = attempts + 1
+      end
+
+      -- If still not 3, take what we have
+      if #swords == 0 then
+         for _, child in ipairs(backpack:GetChildren()) do
+            if child.Name == "LinkedSword" then
+               table.insert(swords, child)
+            end
+         end
+      end
+
+      if #swords == 0 then
          error("No LinkedSword found after waiting.")
       end
 
-      -- 6. Equip, drop, move sword to victim's HRP
+      print("[Kick] Found " .. #swords .. " swords.")
+
+      -- 6. Get victim's HRP
+      local victimHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+      if not victimHRP then
+         error("Victim has no HRP.")
+      end
+
+      -- 7. Process each sword: equip, drop, move to victim's HRP (stacked)
       local char = LocalPlayer.Character
       if not char then error("No character.") end
       local humanoid = char:FindFirstChildOfClass("Humanoid")
       if not humanoid then error("No Humanoid.") end
 
-      humanoid:EquipTool(sword)
-      task.wait(0.1)
-      local equipped = char:FindFirstChild("LinkedSword")
-      if not equipped then
-         error("Failed to equip sword.")
+      for i, sword in ipairs(swords) do
+         humanoid:EquipTool(sword)
+         task.wait(0.1)
+         local equipped = char:FindFirstChild("LinkedSword")
+         if not equipped then
+            print("[Kick] Failed to equip sword #" .. i)
+            continue
+         end
+         equipped.Parent = Workspace
+         task.wait(0.05)
+         breakWelds(equipped)
+         local offset = CFrame.new(0, (i-1) * 0.3, 0)  -- stack slightly vertically
+         local targetCFrame = victimHRP.CFrame * offset
+         moveToolWithSyncMove(equipped, targetCFrame)
+         unanchorAll(equipped)
+         task.wait(0.02)
       end
 
-      equipped.Parent = Workspace
-      task.wait(0.05)
-      breakWelds(equipped)
-
-      local victimHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-      if not victimHRP then
-         error("Victim has no HRP.")
-      end
-      local targetCFrame = victimHRP.CFrame * CFrame.new(0, 0, 0)  -- exactly on HRP
-      moveToolWithSyncMove(equipped, targetCFrame)
-      unanchorAll(equipped)
-
-      -- 7. Thaw me and re‑enable anti‑crash
+      -- 8. Thaw me and re‑enable anti‑crash
       sendMessage("thaw me", "System")
       antiCrashSelfEnabled = oldAntiCrash
       repairBuildingTools()
@@ -1074,7 +1108,7 @@ MiscTab:CreateButton({
       end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
-      notify(".kick", "Custom sequence: blind, freeze, size nan, freeze me, sword → move")
+      notify(".kick", "3‑sword sequence: blind, freeze, size nan, freeze me, sword ×3 → move")
       notify(".afk", ".afk loaded")
       notify(".gearbanme", "Manual gearban")
       notify(".clr", "Deletes Part/Truss/Seat")
@@ -1097,7 +1131,7 @@ MiscTab:CreateButton({
       print("===== KOHLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – blind victim → freeze victim → size nan victim → freeze me → sword → move to victim")
+      print(".kick <partial> – blind victim → freeze victim → size nan victim → freeze me → sword ×3 → move all to victim")
       print(".gearbanme <partial> – manual gearban (portable)")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
       print(".clr – DELETE ONLY 'Part', 'Truss', 'Seat'")
@@ -1556,7 +1590,7 @@ task.spawn(function()
    task.wait(1.5)
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Full version loaded"},
-      {".kick", "Custom sequence: blind, freeze, size nan, freeze me, sword → move"},
+      {".kick", "3‑sword sequence: blind, freeze, size nan, freeze me, sword ×3 → move"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
       {"Monitor commands", "Use 'all' for everyone"},
@@ -1569,5 +1603,5 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print("Kick: blind victim → freeze victim → size nan victim → freeze me → sword me → move sword to victim.")
+print("Kick: blind victim → freeze victim → size nan victim → freeze me → sword ×3 → move all to victim.")
 print("All other features unchanged. Partial matching works on display name and username.")
