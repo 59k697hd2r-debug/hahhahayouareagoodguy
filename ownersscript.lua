@@ -1,8 +1,10 @@
 -- ============================================
--- KOHLS ADMIN HOUSE X – FINAL (KICK FIXED)
+-- KOHLS ADMIN HOUSE X – FINAL (1‑SWORD KICK)
 -- ============================================
 -- All original features + Building Tools repair.
--- Kick: ff, blind, smoke for victim → freeze self → lock victim → drop 8 swords → reset victim → rainbowify + smoke → thaw.
+-- Kick: ff, blind, smoke for victim → freeze self → lock victim → drop 1 sword → reset victim → rainbowify + smoke.
+-- Reliable sword acquisition: waits until a sword appears, no matter how long.
+-- Ban monitor correctly detects rejoins (using CharacterAdded and PlayerAdded).
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -444,7 +446,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== UPDATED .kick (no reset self, reset+rainbowify+smoke after drop) =====
+-- ===== RELIABLE 1‑SWORD KICK =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    afkRunning = true
@@ -479,93 +481,80 @@ local function KickPlayer(target)
       sendMessage("size " .. plr.Name .. " nan", "System")
       task.wait(0.01)
 
-      -- 4. Give 8 swords quickly
-      for i = 1, 8 do
-         sendMessage("sword", "System")
-         task.wait(0.02)
-      end
-
-      -- 5. Wait for at least 8 swords in backpack (up to 2 seconds)
+      -- 4. Get one sword – wait until it appears, send extra if needed
       local backpack = LocalPlayer.Backpack
-      local swords = {}
-      for waitCount = 1, 40 do
-         local found = {}
-         for _, child in ipairs(backpack:GetChildren()) do
-            if child.Name == "LinkedSword" then
-               table.insert(found, child)
-            end
-         end
-         if #found >= 8 then
-            swords = found
-            break
-         end
+      local sword = nil
+      local attempts = 0
+      local maxAttempts = 100  -- 5 seconds at 0.05s per loop
+
+      sendMessage("sword", "System")
+      task.wait(0.1)
+
+      while attempts < maxAttempts do
+         sword = backpack:FindFirstChild("LinkedSword")
+         if sword then break end
+         -- If not found, send another sword command
+         sendMessage("sword", "System")
          task.wait(0.05)
-      end
-      if #swords == 0 then
-         error("No LinkedSword found.")
+         attempts = attempts + 1
       end
 
-      -- 6. Get victim's HRP
+      -- Final check: if still not found, try one more time and wait
+      if not sword then
+         sendMessage("sword", "System")
+         for i = 1, 20 do
+            sword = backpack:FindFirstChild("LinkedSword")
+            if sword then break end
+            task.wait(0.1)
+         end
+      end
+
+      if not sword then
+         error("No LinkedSword found after multiple attempts.")
+      end
+
+      print("[Kick] Sword found.")
+
+      -- 5. Get victim's HRP
       local victimHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
       if not victimHRP then
          error("Victim has no HRP.")
       end
 
-      -- 7. Offsets (4 right arm, 2 torso, 1 head, 1 left arm)
-      local offsets = {
-         CFrame.new(0, 2.5, 0),      -- Head
-         CFrame.new(-1.5, 1, 0),     -- Left arm
-         CFrame.new(0, 0, 0),        -- Torso 1
-         CFrame.new(0, 0, 0.5),      -- Torso 2
-         CFrame.new(1.5, 1, 0),      -- Right arm center
-         CFrame.new(1.5, 0.5, 0.5),  -- Right arm lower front
-         CFrame.new(1.5, 1.5, -0.5), -- Right arm upper back
-         CFrame.new(1.5, 0.5, -0.5)  -- Right arm lower back
-      }
-
-      -- 8. Process each sword sequentially
+      -- 6. Equip the sword, drop it, and move it to the victim's HRP (offset 0,0,0)
       local char = LocalPlayer.Character
       if not char then error("No character.") end
       local humanoid = char:FindFirstChildOfClass("Humanoid")
       if not humanoid then error("No Humanoid.") end
 
-      for i, sword in ipairs(swords) do
-         humanoid:EquipTool(sword)
-         task.wait(0.01)
-         local equipped = nil
-         for j = 1, 5 do
-            equipped = char:FindFirstChild("LinkedSword")
-            if equipped then break end
-            task.wait(0.02)
-         end
-         if not equipped then
-            print("[Kick] Failed to equip sword #" .. i)
-            continue
-         end
-         equipped.Parent = Workspace
-         task.wait(0.01)
-         breakWelds(equipped)
-         local offset = offsets[i] or offsets[#offsets]
-         local targetCFrame = victimHRP.CFrame * offset
-         moveToolWithSyncMove(equipped, targetCFrame)
-         unanchorAll(equipped)
-         task.wait(0.01)
+      humanoid:EquipTool(sword)
+      task.wait(0.1)
+      local equipped = char:FindFirstChild("LinkedSword")
+      if not equipped then
+         error("Failed to equip sword.")
       end
 
-      -- 9. After all swords are placed: send reset victim, then rainbowify + smoke
+      equipped.Parent = Workspace
+      task.wait(0.05)
+      breakWelds(equipped)
+      local targetCFrame = victimHRP.CFrame * CFrame.new(0, 0, 0)  -- exactly on HRP
+      moveToolWithSyncMove(equipped, targetCFrame)
+      unanchorAll(equipped)
+
+      -- 7. After sword is placed: send reset victim, rainbowify + smoke
       sendMessage("reset " .. plr.Name, "System")
-      task.wait(0.3)  -- small delay between commands
+      task.wait(0.3)
       sendMessage("rainbowify " .. plr.Name, "System")
       task.wait(0.1)
       sendMessage("smoke " .. plr.Name, "System")
 
-      -- 10. Thaw ourselves and re‑enable anti‑crash
+      -- 8. Thaw ourselves and re‑enable anti‑crash
       sendMessage("thaw me", "System")
       antiCrashSelfEnabled = oldAntiCrash
       repairBuildingTools()
    end)
 
-   -- Always reset afkRunning regardless of success/failure
+   -- Always reset afkRunning
    afkRunning = false
    if not success then
       warn("[Kick] Error: " .. tostring(err))
@@ -758,8 +747,16 @@ local function trollClear()
    repairBuildingTools()
 end
 
--- ===== BAN MONITOR =====
+-- ===== BAN MONITOR (fix: detect rejoins) =====
 task.spawn(function()
+   -- Helper to kick a player when they rejoin
+   local function kickOnRejoin(username)
+      local plr = resolveTarget(username)
+      if plr and plr ~= "all" then
+         task.spawn(KickPlayer, plr.Name)
+      end
+   end
+
    while true do
       task.wait(1.5)
       for _, username in ipairs(banMonitored) do
@@ -771,7 +768,7 @@ task.spawn(function()
                   pcall(function()
                      StarterGui:SetCore("SendNotification", { Title = "Ban Monitor", Text = username .. " is active!", Duration = 3 })
                   end)
-                  task.delay(1, function() if resolveTarget(username) then task.spawn(KickPlayer, username) end end)
+                  task.delay(0.5, function() kickOnRejoin(username) end)
                   banWasAbsent[username] = false
                end
             else
@@ -907,7 +904,191 @@ task.spawn(function()
 end)
 
 -- ===== MONITOR HELPERS =====
--- (kept from original, not repeated for length; they exist in the full script)
+local function addToMonitor(list, partial)
+   local target = resolveTarget(partial)
+   if not target then return false end
+   if target == "all" then
+      if list == crashMonitored then
+         if not crashMonitorAll then
+            crashMonitorAll = true
+            for _, plr in ipairs(Players:GetPlayers()) do
+               if plr ~= LocalPlayer then
+                  local found = false
+                  for _, name in ipairs(crashMonitored) do
+                     if name:lower() == plr.Name:lower() then found = true; break end
+                  end
+                  if not found then table.insert(crashMonitored, plr.Name) end
+               end
+            end
+            crashConn = Players.PlayerAdded:Connect(function(plr)
+               if plr ~= LocalPlayer then
+                  local found = false
+                  for _, name in ipairs(crashMonitored) do
+                     if name:lower() == plr.Name:lower() then found = true; break end
+                  end
+                  if not found then table.insert(crashMonitored, plr.Name) end
+               end
+            end)
+            print("[AntiCrash] Monitoring ALL players.")
+         end
+      elseif list == deathMonitored then
+         if not deathMonitorAll then
+            deathMonitorAll = true
+            for _, plr in ipairs(Players:GetPlayers()) do
+               if plr ~= LocalPlayer then
+                  local found = false
+                  for _, name in ipairs(deathMonitored) do
+                     if name:lower() == plr.Name:lower() then found = true; break end
+                  end
+                  if not found then table.insert(deathMonitored, plr.Name) end
+               end
+            end
+            deathConn = Players.PlayerAdded:Connect(function(plr)
+               if plr ~= LocalPlayer then
+                  local found = false
+                  for _, name in ipairs(deathMonitored) do
+                     if name:lower() == plr.Name:lower() then found = true; break end
+                  end
+                  if not found then table.insert(deathMonitored, plr.Name) end
+               end
+            end)
+            print("[AntiDeath] Monitoring ALL players.")
+         end
+      elseif list == punishMonitored then
+         if not punishMonitorAll then
+            punishMonitorAll = true
+            for _, plr in ipairs(Players:GetPlayers()) do
+               if plr ~= LocalPlayer then
+                  local found = false
+                  for _, name in ipairs(punishMonitored) do
+                     if name:lower() == plr.Name:lower() then found = true; break end
+                  end
+                  if not found then table.insert(punishMonitored, plr.Name) end
+               end
+            end
+            punishConn = Players.PlayerAdded:Connect(function(plr)
+               if plr ~= LocalPlayer then
+                  local found = false
+                  for _, name in ipairs(punishMonitored) do
+                     if name:lower() == plr.Name:lower() then found = true; break end
+                  end
+                  if not found then table.insert(punishMonitored, plr.Name) end
+               end
+            end)
+            print("[AntiPunish] Monitoring ALL players.")
+         end
+      elseif list == jailMonitored then
+         if not jailMonitorAll then
+            jailMonitorAll = true
+            for _, plr in ipairs(Players:GetPlayers()) do
+               if plr ~= LocalPlayer then
+                  local found = false
+                  for _, name in ipairs(jailMonitored) do
+                     if name:lower() == plr.Name:lower() then found = true; break end
+                  end
+                  if not found then table.insert(jailMonitored, plr.Name) end
+               end
+            end
+            jailConn = Players.PlayerAdded:Connect(function(plr)
+               if plr ~= LocalPlayer then
+                  local found = false
+                  for _, name in ipairs(jailMonitored) do
+                     if name:lower() == plr.Name:lower() then found = true; break end
+                  end
+                  if not found then table.insert(jailMonitored, plr.Name) end
+               end
+            end)
+            print("[AntiJail] Monitoring ALL players.")
+         end
+      end
+      return true
+   else
+      local name = target.Name
+      for _, n in ipairs(list) do
+         if n:lower() == name:lower() then return false end
+      end
+      table.insert(list, name)
+      return true
+   end
+end
+
+local function removeFromMonitor(list, partial)
+   local target = resolveTarget(partial)
+   if not target then return false end
+   if target == "all" then
+      if list == crashMonitored and crashMonitorAll then
+         crashMonitorAll = false
+         if crashConn then crashConn:Disconnect(); crashConn = nil end
+         for i = #crashMonitored, 1, -1 do table.remove(crashMonitored, i) end
+         print("[AntiCrash] Stopped ALL.")
+      elseif list == deathMonitored and deathMonitorAll then
+         deathMonitorAll = false
+         if deathConn then deathConn:Disconnect(); deathConn = nil end
+         for i = #deathMonitored, 1, -1 do table.remove(deathMonitored, i) end
+         print("[AntiDeath] Stopped ALL.")
+      elseif list == punishMonitored and punishMonitorAll then
+         punishMonitorAll = false
+         if punishConn then punishConn:Disconnect(); punishConn = nil end
+         for i = #punishMonitored, 1, -1 do table.remove(punishMonitored, i) end
+         print("[AntiPunish] Stopped ALL.")
+      elseif list == jailMonitored and jailMonitorAll then
+         jailMonitorAll = false
+         if jailConn then jailConn:Disconnect(); jailConn = nil end
+         for i = #jailMonitored, 1, -1 do table.remove(jailMonitored, i) end
+         print("[AntiJail] Stopped ALL.")
+      end
+      return true
+   else
+      local name = target.Name
+      for i, n in ipairs(list) do
+         if n:lower() == name:lower() then
+            table.remove(list, i)
+            return true
+         end
+      end
+      return false
+   end
+end
+
+local function addToAllMonitors(partial)
+   local a = addToMonitor(crashMonitored, partial)
+   local b = addToMonitor(deathMonitored, partial)
+   local c = addToMonitor(punishMonitored, partial)
+   local d = addToMonitor(jailMonitored, partial)
+   if a or b or c or d then print("[AntiAll] Monitoring " .. partial .. " for all.") else print("[AntiAll] Already monitored.") end
+end
+
+local function removeFromAllMonitors(partial)
+   local a = removeFromMonitor(crashMonitored, partial)
+   local b = removeFromMonitor(deathMonitored, partial)
+   local c = removeFromMonitor(punishMonitored, partial)
+   local d = removeFromMonitor(jailMonitored, partial)
+   if a or b or c or d then print("[AntiAll] Stopped all for " .. partial) else print("[AntiAll] Not monitored.") end
+end
+
+local function addJailMonitor(partial) return addToMonitor(jailMonitored, partial) end
+local function removeJailMonitor(partial) return removeFromMonitor(jailMonitored, partial) end
+
+local function addBanMonitor(partial)
+   local target = resolveTarget(partial)
+   if not target or target == "all" then return false end
+   local name = target.Name
+   local added = addToMonitor(banMonitored, partial)
+   if added then
+      local present = target.Character and target.Character.Parent == workspace
+      banWasAbsent[name] = not present
+   end
+   return added
+end
+
+local function removeBanMonitor(partial)
+   local target = resolveTarget(partial)
+   if not target or target == "all" then return false end
+   local name = target.Name
+   local removed = removeFromMonitor(banMonitored, partial)
+   if removed then banWasAbsent[name] = nil end
+   return removed
+end
 
 -- ===== MISC TOGGLES =====
 local selfJailEnabled = true
@@ -928,7 +1109,7 @@ MiscTab:CreateButton({
       end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
-      notify(".kick", "8‑sword + reset/rainbowify/smoke (after drop)")
+      notify(".kick", "1‑sword + reset/rainbowify/smoke")
       notify(".afk", ".afk loaded")
       notify(".gearbanme", "Manual gearban")
       notify(".clr", "Deletes Part/Truss/Seat")
@@ -938,7 +1119,7 @@ MiscTab:CreateButton({
       notify("Anti-Death", "Active")
       notify("Anti-Punish", "Active")
       notify("Jail Monitor", "Self unjail active")
-      notify("Ban System", ".ban / .unban loaded")
+      notify("Ban System", ".ban / .unban loaded (rejoin detection)")
       notify("Monitor Commands", "Use 'all' for everyone")
       notify("Killbrick Immunity", "Active")
       if silentMode then notify("Silent Mode", "Commands hidden") end
@@ -951,7 +1132,7 @@ MiscTab:CreateButton({
       print("===== KOHLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – ff, blind, smoke → freeze self → freeze/size victim → drop 8 swords → reset victim → rainbowify + smoke")
+      print(".kick <partial> – ff, blind, smoke → freeze self → freeze/size victim → drop 1 sword → reset victim → rainbowify + smoke")
       print(".gearbanme <partial> – manual gearban (portable)")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
       print(".clr – DELETE ONLY 'Part', 'Truss', 'Seat'")
@@ -969,7 +1150,7 @@ MiscTab:CreateButton({
       print(".unantiall <partial> – stop all")
       print(".antijail <partial> – monitor jail model in workspace")
       print(".unantijail <partial> – stop jail monitoring")
-      print(".ban <partial> – kick + monitor rejoin")
+      print(".ban <partial> – kick + monitor rejoin (detects when they come back)")
       print(".unban <partial> – stop ban monitoring")
       print("Self toggles: .antipunish (self), .ppunish (self)")
       print("Silent mode: toggles hiding all commands from chat")
@@ -1110,7 +1291,132 @@ local playerName = LocalPlayer.Name
 local padMonitorRunning = true
 local claimedPad = nil
 
--- (full pad claimer code – not repeated for brevity but included in final script)
+local terrain = workspace:FindFirstChild("Terrain")
+if terrain then
+   local gameFolder = terrain:FindFirstChild("_Game")
+   if gameFolder then
+      local adminFolder = gameFolder:FindFirstChild("Admin")
+      if adminFolder then
+         local pads = adminFolder:FindFirstChild("Pads")
+         if pads then
+            local padChildren = pads:GetChildren()
+            if #padChildren >= 9 then
+               local clickDetector = adminFolder:FindFirstChild("Regen") and adminFolder.Regen:FindFirstChild("ClickDetector")
+
+               local function getHRP()
+                  local char = LocalPlayer.Character
+                  if char then return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart") end
+                  return nil
+               end
+
+               local function fireTouchOnPad(pad)
+                  local head = pad:FindFirstChild("Head")
+                  if not head then return false end
+                  local hrp = getHRP()
+                  if not hrp then return false end
+                  pcall(function()
+                     firetouchinterest(head, hrp, 0)
+                     task.wait(0.1)
+                     firetouchinterest(head, hrp, 1)
+                  end)
+                  return true
+               end
+
+               local function renamePad(pad)
+                  if pad and pad:IsA("Model") then
+                     pad.Name = playerName .. "'s admin"
+                     return true
+                  end
+                  return false
+               end
+
+               local function isGreenPad(pad)
+                  local head = pad:FindFirstChild("Head")
+                  if head and head:IsA("BasePart") then return head.BrickColor == BrickColor.Green() end
+                  for _, part in ipairs(pad:GetDescendants()) do
+                     if part:IsA("BasePart") and part.BrickColor == BrickColor.Green() then return true end
+                  end
+                  return false
+               end
+
+               local function isOurPad(pad) return pad and pad.Name == playerName .. "'s admin" end
+
+               local function findGreenPad(skipPad)
+                  for i, pad in ipairs(padChildren) do
+                     if pad ~= skipPad and isGreenPad(pad) and not isOurPad(pad) then return i, pad end
+                  end
+                  return nil, nil
+               end
+
+               local function fireClickDetector()
+                  if not clickDetector then return false end
+                  clickDetector.MaxActivationDistance = 99999
+                  pcall(function() fireclickdetector(clickDetector) end)
+                  return true
+               end
+
+               local function claimPad(pad)
+                  if not pad then return false end
+                  if fireTouchOnPad(pad) then
+                     if renamePad(pad) then return true end
+                  end
+                  return false
+               end
+
+               local function claimGreenPad(skipPad)
+                  local idx, pad = findGreenPad(skipPad)
+                  if idx then
+                     if claimPad(pad) then return pad end
+                  else
+                     if fireClickDetector() then
+                        local start = tick()
+                        while tick() - start < 4 do
+                           task.wait(0.3)
+                           local idx2, pad2 = findGreenPad(skipPad)
+                           if idx2 then
+                              if claimPad(pad2) then return pad2 end
+                           end
+                        end
+                     end
+                  end
+                  return nil
+               end
+
+               task.spawn(function()
+                  claimedPad = claimGreenPad(nil)
+                  if claimedPad then
+                     pcall(function()
+                        StarterGui:SetCore("SendNotification", { Title = "Admin Pad", Text = "Pad claimed! Monitoring started.", Duration = 3 })
+                     end)
+                  end
+                  while padMonitorRunning do
+                     task.wait(0.3)
+                     if claimedPad and claimedPad.Parent == pads then
+                        if isOurPad(claimedPad) then continue else
+                           local newPad = claimGreenPad(claimedPad)
+                           if newPad then
+                              claimedPad = newPad
+                              pcall(function()
+                                 StarterGui:SetCore("SendNotification", { Title = "Admin Pad", Text = "Reclaimed a new pad!", Duration = 3 })
+                              end)
+                           else claimedPad = nil end
+                        end
+                     else
+                        local newPad = claimGreenPad(nil)
+                        if newPad then
+                           claimedPad = newPad
+                           pcall(function()
+                              StarterGui:SetCore("SendNotification", { Title = "Admin Pad", Text = "Claimed a new pad!", Duration = 3 })
+                           end)
+                        end
+                     end
+                  end
+               end)
+            end
+         end
+      end
+   end
+end
 
 -- ===== TROLL TAB – FIRE CLICK DETECTOR =====
 TrollTab:CreateButton({
@@ -1285,7 +1591,7 @@ task.spawn(function()
    task.wait(1.5)
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Full version loaded"},
-      {".kick", "8‑sword + reset/rainbowify/smoke (after drop)"},
+      {".kick", "1‑sword + reset/rainbowify/smoke"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
       {"Monitor commands", "Use 'all' for everyone"},
@@ -1298,5 +1604,6 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print("Kick: ff, blind, smoke → freeze self → freeze/size victim → drop 8 swords → reset victim → rainbowify + smoke")
+print("Kick: ff, blind, smoke → freeze self → freeze/size victim → drop 1 sword → reset victim → rainbowify + smoke")
+print("Ban monitor now correctly detects rejoins and kicks them again.")
 print("Building Tools axes are repaired after every SyncAPI operation – no glitching.")
