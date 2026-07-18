@@ -1,7 +1,8 @@
 -- ============================================
--- KOHLS ADMIN HOUSE X – FINAL (1‑SWORD KICK)
+-- KOHLS ADMIN HOUSE X – FIXED (1‑SWORD KICK)
 -- ============================================
--- Kick sequence: freeze victim → size nan victim → sword me → freeze me → move sword to victim
+-- Fixed monitoring for other players (crash, death, punish, jail) and self‑jail.
+-- Now checks both Name and DisplayName for jail models.
 -- All original features (monitors, clear, killbrick, loaders, pad claimer, troll, etc.) unchanged.
 -- ============================================
 
@@ -758,11 +759,12 @@ task.spawn(function()
    end
 end)
 
--- ===== PROTECTIVE MONITORING LOOP =====
+-- ===== PROTECTIVE MONITORING LOOP (FIXED) =====
 task.spawn(function()
    while true do
       task.wait(0.05)
-      -- Clean invalid entries
+      
+      -- Clean invalid entries from all lists
       for i = #crashMonitored, 1, -1 do
          local plr = resolveTarget(crashMonitored[i])
          if not plr or plr == "all" then table.remove(crashMonitored, i) end
@@ -851,9 +853,12 @@ task.spawn(function()
          end
       end
 
-      -- Self jail
+      -- Self jail (now checks both Name and DisplayName)
       if selfJailEnabled then
          local jailModel = workspace:FindFirstChild(LocalPlayer.Name .. "'s jail")
+         if not jailModel then
+            jailModel = workspace:FindFirstChild(LocalPlayer.DisplayName .. "'s jail")
+         end
          if jailModel then
             local now = tick()
             local key = "self_jail"
@@ -864,11 +869,14 @@ task.spawn(function()
          end
       end
 
-      -- Jail others
+      -- Jail others (now checks both Name and DisplayName)
       for _, storedName in ipairs(jailMonitored) do
          local plr = resolveTarget(storedName)
          if plr and plr ~= "all" then
             local jailModel = workspace:FindFirstChild(plr.Name .. "'s jail")
+            if not jailModel then
+               jailModel = workspace:FindFirstChild(plr.DisplayName .. "'s jail")
+            end
             if jailModel then
                local now = tick()
                local key = plr.Name .. "_jail"
@@ -1094,12 +1102,12 @@ MiscTab:CreateButton({
       notify(".clr", "Deletes Part/Truss/Seat (fixed for repeated use)")
       notify(".workspaceclr", "Deletes everything")
       notify(".trollclr", "Unanchor + disable collision")
-      notify("Anti-Crash", "Active")
+      notify("Anti-Crash", "Active (now checks Name & DisplayName for jail)")
       notify("Anti-Death", "Active")
       notify("Anti-Punish", "Active")
-      notify("Jail Monitor", "Self unjail active")
+      notify("Jail Monitor", "Self unjail active (fixed)")
       notify("Ban System", ".ban / .unban loaded (rejoin detection)")
-      notify("Monitor Commands", "Use 'all' for everyone")
+      notify("Monitor Commands", "Use 'all' for everyone (auto‑adds new players)")
       notify("Killbrick Immunity", "Active")
       if silentMode then notify("Silent Mode", "Commands hidden") end
    end
@@ -1127,7 +1135,7 @@ MiscTab:CreateButton({
       print(".unantipunish <partial> – stop")
       print(".antiall <partial> – monitor crash, death, punish, and jail")
       print(".unantiall <partial> – stop all")
-      print(".antijail <partial> – monitor jail model in workspace")
+      print(".antijail <partial> – monitor jail model in workspace (now checks both Name & DisplayName)")
       print(".unantijail <partial> – stop jail monitoring")
       print(".ban <partial> – kick + monitor rejoin (detects when they come back)")
       print(".unban <partial> – stop ban monitoring")
@@ -1494,7 +1502,60 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
       elseif msg == ".adminclr" then
          task.spawn(adminClear)
          if silentMode then return nil end
-      -- ... rest of commands are unchanged, omitted for brevity but they exist in full script
+      elseif string.sub(msg, 1, 11) == ".anticrash " then
+         local username = string.sub(args[1], 12):gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then addToMonitor(crashMonitored, username); print("[AntiCrash] Now monitoring " .. username) else print("[AntiCrash] Specify username or 'all'.") end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 13) == ".unanticrash " then
+         local username = string.sub(args[1], 14):gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then removeFromMonitor(crashMonitored, username); print("[AntiCrash] Stopped " .. username) else print("[AntiCrash] Specify username.") end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 11) == ".antideath " then
+         local username = string.sub(args[1], 12):gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then addToMonitor(deathMonitored, username); print("[AntiDeath] Now monitoring " .. username) else print("[AntiDeath] Specify username or 'all'.") end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 13) == ".unantideath " then
+         local username = string.sub(args[1], 14):gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then removeFromMonitor(deathMonitored, username); print("[AntiDeath] Stopped " .. username) else print("[AntiDeath] Specify username.") end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 12) == ".antipunish " then
+         local username = string.sub(args[1], 13):gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then addToMonitor(punishMonitored, username); print("[AntiPunish] Now monitoring " .. username) else print("[AntiPunish] Specify username or 'all'.") end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 14) == ".unantipunish " then
+         local username = string.sub(args[1], 15):gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then removeFromMonitor(punishMonitored, username); print("[AntiPunish] Stopped " .. username) else print("[AntiPunish] Specify username.") end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 9) == ".antiall " then
+         local username = string.sub(args[1], 10):gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then addToAllMonitors(username) else print("[AntiAll] Specify username or 'all'.") end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 11) == ".unantiall " then
+         local username = string.sub(args[1], 12):gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then removeFromAllMonitors(username) else print("[AntiAll] Specify username.") end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 10) == ".antijail " then
+         local username = string.sub(args[1], 11):gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then addJailMonitor(username); print("[AntiJail] Now monitoring " .. username) else print("[AntiJail] Specify username or 'all'.") end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 12) == ".unantijail " then
+         local username = string.sub(args[1], 13):gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then removeJailMonitor(username); print("[AntiJail] Stopped " .. username) else print("[AntiJail] Specify username.") end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 5) == ".ban " then
+         local username = string.sub(args[1], 6):gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            local plr = resolveTarget(username)
+            if plr and plr ~= "all" then task.spawn(KickPlayer, plr.Name) else print("[Ban] Player not found or 'all', will monitor anyway.") end
+            if addBanMonitor(username) then print("[Ban] Now monitoring " .. username) else print("[Ban] Already monitoring " .. username) end
+         else print("[Ban] Specify username.") end
+         if silentMode then return nil end
+      elseif string.sub(msg, 1, 7) == ".unban " then
+         local username = string.sub(args[1], 8):gsub("^%s+", ""):gsub("%s+$", "")
+         if username ~= "" then
+            if removeBanMonitor(username) then print("[Ban] Stopped " .. username) else print("[Ban] Not monitored.") end
+         else print("[Ban] Specify username.") end
+         if silentMode then return nil end
       end
    end
    return old and old(self, ...)
@@ -1520,9 +1581,10 @@ task.spawn(function()
       {".kick", "1‑sword: freeze victim, size nan, sword me, freeze me, move sword"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
-      {"Monitor commands", "Use 'all' for everyone"},
+      {"Monitor commands", "Use 'all' for everyone (auto‑adds new players)"},
       {"Silent mode", "Toggle in Misc"},
-      {".clr", "Now works repeatedly without re‑execution"}
+      {".clr", "Now works repeatedly without re‑execution"},
+      {"Anti-Jail", "Fixed – now checks both Name and DisplayName"}
    }
    for _, n in ipairs(notifications) do
       notify(n[1], n[2])
@@ -1533,3 +1595,4 @@ end)
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
 print("Kick: freeze victim → size nan → sword me → freeze me → move sword to victim.")
 print(".clr now works reliably every time.")
+print("Anti-Jail fixed – now checks both Name and DisplayName for jail models.")
