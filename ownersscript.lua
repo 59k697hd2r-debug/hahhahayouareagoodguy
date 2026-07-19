@@ -445,7 +445,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== UPDATED KICK SEQUENCE (1 sword, no blind, NO FREEZE ME) =====
+-- ===== UPDATED KICK SEQUENCE (1 sword, blind victim, freeze victim, size nan, sword me, freeze me, move sword, thaw me) =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    afkRunning = true
@@ -456,18 +456,19 @@ local function KickPlayer(target)
          error("Invalid target.")
       end
 
-      -- 1. freeze victim
-         sendMessage("blind " .. plr.Name, "System")
+      -- 1. blind victim
+      sendMessage("blind " .. plr.Name, "System")
       task.wait(0.02)
-         
+
+      -- 2. freeze victim
       sendMessage("freeze " .. plr.Name, "System")
       task.wait(0.02)
 
-      -- 2. size victim nan
+      -- 3. size victim nan
       sendMessage("size " .. plr.Name .. " nan", "System")
       task.wait(0.02)
 
-      -- 3. sword me (grant one LinkedSword)
+      -- 4. sword me (grant one LinkedSword)
       sendMessage("sword", "System")
       task.wait(0.1)
 
@@ -483,7 +484,13 @@ local function KickPlayer(target)
          error("No LinkedSword found after waiting.")
       end
 
-      -- 4. Equip, drop, move sword to victim's HRP (no freeze me)
+      -- 5. freeze me (disable anti‑crash temporarily)
+      local oldAntiCrash = antiCrashSelfEnabled
+      antiCrashSelfEnabled = false
+      sendMessage("freeze me", "System")
+      task.wait(0.02)
+
+      -- 6. Equip, drop, move sword to victim's HRP
       local char = LocalPlayer.Character
       if not char then error("No character.") end
       local humanoid = char:FindFirstChildOfClass("Humanoid")
@@ -508,6 +515,9 @@ local function KickPlayer(target)
       moveToolWithSyncMove(equipped, targetCFrame)
       unanchorAll(equipped)
 
+      -- 7. Thaw me and re‑enable anti‑crash
+      sendMessage("thaw me", "System")
+      antiCrashSelfEnabled = oldAntiCrash
       repairBuildingTools()
    end)
 
@@ -515,6 +525,8 @@ local function KickPlayer(target)
    afkRunning = false
    if not success then
       warn("[Kick] Error: " .. tostring(err))
+      antiCrashSelfEnabled = true
+      sendMessage("thaw me", "System")
       repairBuildingTools()
    end
 end
@@ -1088,7 +1100,7 @@ MiscTab:CreateButton({
       end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
-      notify(".kick", "1‑sword: freeze victim, size nan, sword me, move sword (NO freeze me)")
+      notify(".kick", "1‑sword: blind victim, freeze victim, size nan, sword me, freeze me, move sword, thaw me")
       notify(".afk", ".afk loaded")
       notify(".gearbanme", "Manual gearban")
       notify(".clr", "Deletes Part/Truss/Seat (fixed for repeated use)")
@@ -1111,7 +1123,7 @@ MiscTab:CreateButton({
       print("===== KOHLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – freeze victim → size nan → sword me → move sword to victim (NO freeze me)")
+      print(".kick <partial> – blind victim → freeze victim → size nan → sword me → freeze me → move sword to victim → thaw me")
       print(".gearbanme <partial> – manual gearban (portable)")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
       print(".clr – DELETE ONLY 'Part', 'Truss', 'Seat' (now works every time)")
@@ -1570,7 +1582,7 @@ task.spawn(function()
    task.wait(1.5)
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Full version loaded"},
-      {".kick", "1‑sword: freeze victim, size nan, sword me, move sword (NO freeze me)"},
+      {".kick", "1‑sword: blind victim, freeze victim, size nan, sword me, freeze me, move sword, thaw me"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
       {"Monitor commands", "Use 'all' for everyone (auto‑adds new players)"},
@@ -1585,6 +1597,6 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print("Kick: freeze victim → size nan → sword me → move sword to victim (NO freeze me).")
+print("Kick: blind victim → freeze victim → size nan → sword me → freeze me → move sword to victim → thaw me.")
 print(".clr now works reliably every time.")
 print("Anti-Jail fixed – now checks both Name and DisplayName for jail models.")
