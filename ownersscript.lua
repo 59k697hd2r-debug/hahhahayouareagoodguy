@@ -4,6 +4,7 @@
 -- Fixed monitoring for other players (crash, death, punish, jail) and self‑jail.
 -- Now checks both Name and DisplayName for jail models.
 -- All original features (monitors, clear, killbrick, loaders, pad claimer, troll, etc.) unchanged.
+-- KICK SEQUENCE UPDATED: speed 0 → freeze → size nan → sword (me) → freeze me → move sword → thaw me (with minimum delays)
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -445,7 +446,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== UPDATED KICK SEQUENCE (1 sword, blind victim, freeze victim, size nan, sword me, freeze me, move sword, thaw me) =====
+-- ===== UPDATED KICK SEQUENCE (speed 0 → freeze → size nan → sword me → freeze me → move sword → thaw me) =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    afkRunning = true
@@ -456,29 +457,29 @@ local function KickPlayer(target)
          error("Invalid target.")
       end
 
-      -- 1. blind victim
-      sendMessage("blind " .. plr.Name, "System")
-      task.wait(0.02)
+      -- 1. speed victim 0
+      sendMessage("speed " .. plr.Name .. " 0", "System")
+      task.wait(0.01)
 
       -- 2. freeze victim
       sendMessage("freeze " .. plr.Name, "System")
-      task.wait(0.02)
+      task.wait(0.01)
 
       -- 3. size victim nan
       sendMessage("size " .. plr.Name .. " nan", "System")
-      task.wait(0.02)
+      task.wait(0.01)
 
       -- 4. sword me (grant one LinkedSword)
       sendMessage("sword", "System")
-      task.wait(0.1)
+      task.wait(0.05)  -- minimal wait before checking
 
-      -- Wait up to 3 seconds for sword to appear
+      -- Wait up to 1 second for sword to appear (fast)
       local backpack = LocalPlayer.Backpack
       local sword = nil
-      for i = 1, 30 do
+      for i = 1, 20 do
          sword = backpack:FindFirstChild("LinkedSword")
          if sword then break end
-         task.wait(0.1)
+         task.wait(0.05)
       end
       if not sword then
          error("No LinkedSword found after waiting.")
@@ -488,7 +489,7 @@ local function KickPlayer(target)
       local oldAntiCrash = antiCrashSelfEnabled
       antiCrashSelfEnabled = false
       sendMessage("freeze me", "System")
-      task.wait(0.02)
+      task.wait(0.01)
 
       -- 6. Equip, drop, move sword to victim's HRP
       local char = LocalPlayer.Character
@@ -497,21 +498,21 @@ local function KickPlayer(target)
       if not humanoid then error("No Humanoid.") end
 
       humanoid:EquipTool(sword)
-      task.wait(0.1)
+      task.wait(0.05)
       local equipped = char:FindFirstChild("LinkedSword")
       if not equipped then
          error("Failed to equip sword.")
       end
 
       equipped.Parent = Workspace
-      task.wait(0.05)
+      task.wait(0.01)
       breakWelds(equipped)
 
       local victimHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
       if not victimHRP then
          error("Victim has no HRP.")
       end
-      local targetCFrame = victimHRP.CFrame * CFrame.new(0, 0, 0)  -- exactly on HRP
+      local targetCFrame = victimHRP.CFrame * CFrame.new(0, 0, 0)
       moveToolWithSyncMove(equipped, targetCFrame)
       unanchorAll(equipped)
 
@@ -521,7 +522,6 @@ local function KickPlayer(target)
       repairBuildingTools()
    end)
 
-   -- Always reset afkRunning
    afkRunning = false
    if not success then
       warn("[Kick] Error: " .. tostring(err))
@@ -620,7 +620,6 @@ local function clearAll()
       end
    end)
 
-   -- Guaranteed cleanup
    clrRunning = false
    repairBuildingTools()
    if not success then
@@ -1100,7 +1099,7 @@ MiscTab:CreateButton({
       end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
-      notify(".kick", "1‑sword: blind victim, freeze victim, size nan, sword me, freeze me, move sword, thaw me")
+      notify(".kick", "speed 0 → freeze → size nan → sword me → freeze me → move sword → thaw me")
       notify(".afk", ".afk loaded")
       notify(".gearbanme", "Manual gearban")
       notify(".clr", "Deletes Part/Truss/Seat (fixed for repeated use)")
@@ -1123,7 +1122,7 @@ MiscTab:CreateButton({
       print("===== KOHLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – blind victim → freeze victim → size nan → sword me → freeze me → move sword to victim → thaw me")
+      print(".kick <partial> – speed 0 → freeze → size nan → sword me → freeze me → move sword to victim → thaw me")
       print(".gearbanme <partial> – manual gearban (portable)")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
       print(".clr – DELETE ONLY 'Part', 'Truss', 'Seat' (now works every time)")
@@ -1582,7 +1581,7 @@ task.spawn(function()
    task.wait(1.5)
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Full version loaded"},
-      {".kick", "1‑sword: blind victim, freeze victim, size nan, sword me, freeze me, move sword, thaw me"},
+      {".kick", "speed 0 → freeze → size nan → sword me → freeze me → move sword → thaw me"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
       {"Monitor commands", "Use 'all' for everyone (auto‑adds new players)"},
@@ -1597,6 +1596,6 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print("Kick: blind victim → freeze victim → size nan → sword me → freeze me → move sword to victim → thaw me.")
+print("Kick: speed 0 → freeze → size nan → sword me → freeze me → move sword to victim → thaw me.")
 print(".clr now works reliably every time.")
 print("Anti-Jail fixed – now checks both Name and DisplayName for jail models.")
