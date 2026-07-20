@@ -461,6 +461,9 @@ local function KickPlayer(target)
       task.wait(0.02)
 
       -- 2. size victim nan
+      sendMessage("blind " .. plr.Name, "System")
+      task.wait(0.02)
+
       sendMessage("size " .. plr.Name .. " nan", "System")
       task.wait(0.02)
 
@@ -511,8 +514,8 @@ local function KickPlayer(target)
       moveToolWithSyncMove(equipped, targetCFrame)
       unanchorAll(equipped)
 
-      -- 6. Thaw me and re‑enable anti‑crash
-      sendMessage("thaw me", "System")
+      -- 6. Thaw me and re‑enable anti‑crash 
+      sendMessage("reset " .. plr.Name, "System")
       antiCrashSelfEnabled = oldAntiCrash
       repairBuildingTools()
    end)
