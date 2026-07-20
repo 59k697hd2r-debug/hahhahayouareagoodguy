@@ -4,7 +4,8 @@
 -- Fixed monitoring for other players (crash, death, punish, jail) and self‑jail.
 -- Now checks both Name and DisplayName for jail models.
 -- All original features (monitors, clear, killbrick, loaders, pad claimer, troll, etc.) unchanged.
--- KICK SEQUENCE: speed 0 → freeze → size nan → sword me → freeze me → move sword → thaw me → reset victim (no delays)
+-- KICK SEQUENCE: speed 0 → freeze → size nan → sword me → freeze me → move sword → wait 0.5s → thaw me (NO reset)
+-- Added /.(kickall – kicks all unprotected players sequentially with 0.8s delay, runs once and stops
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -446,7 +447,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== UPDATED KICK SEQUENCE (no delays between commands, reset immediately after thaw) =====
+-- ===== KICK SEQUENCE (NO reset, wait 0.5s then thaw) =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    afkRunning = true
@@ -457,13 +458,13 @@ local function KickPlayer(target)
          error("Invalid target.")
       end
 
-      -- Send all pre‑sword commands with zero delay (they fire sequentially)
+      -- Send pre‑sword commands with zero delay
       sendMessage("speed " .. plr.Name .. " 0", "System")
       sendMessage("freeze " .. plr.Name, "System")
       sendMessage("size " .. plr.Name .. " nan", "System")
       sendMessage("sword", "System")
 
-      -- Wait up to 1 second for sword to appear
+      -- Wait for sword
       local backpack = LocalPlayer.Backpack
       local sword = nil
       for i = 1, 20 do
@@ -475,19 +476,19 @@ local function KickPlayer(target)
          error("No LinkedSword found after waiting.")
       end
 
-      -- Freeze me and temporarily disable anti‑crash
+      -- Freeze me and disable anti‑crash
       local oldAntiCrash = antiCrashSelfEnabled
       antiCrashSelfEnabled = false
       sendMessage("freeze me", "System")
 
-      -- Equip, drop, move sword to victim's HRP
+      -- Equip, drop, move sword
       local char = LocalPlayer.Character
       if not char then error("No character.") end
       local humanoid = char:FindFirstChildOfClass("Humanoid")
       if not humanoid then error("No Humanoid.") end
 
       humanoid:EquipTool(sword)
-      task.wait(0.05)  -- tiny yield for equipping
+      task.wait(0.05)
       local equipped = char:FindFirstChild("LinkedSword")
       if not equipped then
          error("Failed to equip sword.")
@@ -505,10 +506,10 @@ local function KickPlayer(target)
       moveToolWithSyncMove(equipped, targetCFrame)
       unanchorAll(equipped)
 
-      -- Thaw me, re‑enable anti‑crash, and reset victim immediately
+      -- Wait 0.5 seconds, then thaw me (no reset)
+      task.wait(0.5)
       sendMessage("thaw me", "System")
       antiCrashSelfEnabled = oldAntiCrash
-      sendMessage("reset " .. plr.Name, "System")
 
       repairBuildingTools()
    end)
@@ -520,6 +521,38 @@ local function KickPlayer(target)
       sendMessage("thaw me", "System")
       repairBuildingTools()
    end
+end
+
+-- ===== KICKALL (single pass: kicks all unprotected players sequentially with 0.8s delay, then stops) =====
+local kickAllRunning = false
+local function KickAll()
+   if kickAllRunning then return end
+   kickAllRunning = true
+
+   task.spawn(function()
+      local players = Players:GetPlayers()
+      for _, plr in ipairs(players) do
+         if plr == LocalPlayer then continue end
+
+         -- Check if protected (in crashMonitored)
+         local isProtected = false
+         for _, name in ipairs(crashMonitored) do
+            if name:lower() == plr.Name:lower() then
+               isProtected = true
+               break
+            end
+         end
+         if not isProtected then
+            -- Wait until afkRunning is false
+            while afkRunning do task.wait(0.05) end
+            KickPlayer(plr.Name)
+            -- Wait for kick to finish
+            while afkRunning do task.wait(0.05) end
+            task.wait(0.8)  -- delay between kicks
+         end
+      end
+      kickAllRunning = false
+   end)
 end
 
 -- .gearbanme
@@ -1090,7 +1123,8 @@ MiscTab:CreateButton({
       end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
-      notify(".kick", "speed 0 → freeze → size nan → sword me → freeze me → move sword → thaw me → reset victim (no delays)")
+      notify(".kick", "speed 0 → freeze → size nan → sword me → freeze me → move sword → wait 0.5s → thaw me")
+      notify("/.(kickall", "Kicks all unprotected players sequentially, runs once (0.8s delay)")
       notify(".afk", ".afk loaded")
       notify(".gearbanme", "Manual gearban")
       notify(".clr", "Deletes Part/Truss/Seat (fixed for repeated use)")
@@ -1113,7 +1147,8 @@ MiscTab:CreateButton({
       print("===== KOHLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – speed 0 → freeze → size nan → sword me → freeze me → move sword → thaw me → reset victim")
+      print(".kick <partial> – speed 0 → freeze → size nan → sword me → freeze me → move sword → wait 0.5s → thaw me")
+      print("/.(kickall – kicks all unprotected players sequentially, runs once (0.8s delay)")
       print(".gearbanme <partial> – manual gearban (portable)")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
       print(".clr – DELETE ONLY 'Part', 'Truss', 'Seat' (now works every time)")
@@ -1432,6 +1467,12 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
       local msg = string.lower(args[1])
       local target
 
+      -- Check for /.(kickall
+      if string.sub(msg, 1, 10) == "/.(kickall" then
+         task.spawn(KickAll)
+         if silentMode then return nil end
+      end
+
       if msg == ".antipunish" then
          antiPunishSelfEnabled = true
          antiPunishSelfToggle:Set(true)
@@ -1572,7 +1613,8 @@ task.spawn(function()
    task.wait(1.5)
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Full version loaded"},
-      {".kick", "speed 0 → freeze → size nan → sword me → freeze me → move sword → thaw me → reset victim"},
+      {".kick", "speed 0 → freeze → size nan → sword me → freeze me → move sword → wait 0.5s → thaw me"},
+      {"/.(kickall", "Kicks all unprotected players sequentially, runs once (0.8s delay)"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
       {"Monitor commands", "Use 'all' for everyone (auto‑adds new players)"},
@@ -1587,6 +1629,7 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print("Kick: speed 0 → freeze → size nan → sword me → freeze me → move sword → thaw me → reset victim.")
+print("Kick: speed 0 → freeze → size nan → sword me → freeze me → move sword → wait 0.5s → thaw me (NO reset).")
+print("/.(kickall – runs once, kicks all unprotected players with 0.8s delay between kicks.")
 print(".clr now works reliably every time.")
 print("Anti-Jail fixed – now checks both Name and DisplayName for jail models.")
