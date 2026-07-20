@@ -4,7 +4,6 @@
 -- Fixed monitoring for other players (crash, death, punish, jail) and self‑jail.
 -- Now checks both Name and DisplayName for jail models.
 -- All original features (monitors, clear, killbrick, loaders, pad claimer, troll, etc.) unchanged.
--- KICK SEQUENCE: speed 0 → freeze → size nan → sword me → freeze me (0.5s) → move sword → thaw me → wait 0.6s → reset victim
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -446,8 +445,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== UPDATED KICK SEQUENCE =====
--- speed 0 → freeze → size nan → sword me → freeze me (0.5s) → move sword → thaw me → wait 0.6s → reset victim
+-- ===== UPDATED KICK SEQUENCE (1 sword, no blind) =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    afkRunning = true
@@ -458,81 +456,68 @@ local function KickPlayer(target)
          error("Invalid target.")
       end
 
-      -- 1. speed victim 0
-      sendMessage("speed " .. plr.Name .. " 0", "System")
-      task.wait(0.01)
-
-      -- 2. freeze victim
+      -- 1. freeze victim
       sendMessage("freeze " .. plr.Name, "System")
-      task.wait(0.01)
+      task.wait(0.02)
 
-      -- 3. size victim nan
+      -- 2. size victim nan
       sendMessage("size " .. plr.Name .. " nan", "System")
-      task.wait(0.01)
+      task.wait(0.02)
 
-      -- 4. sword me (grant one LinkedSword)
+      -- 3. sword me (grant one LinkedSword)
       sendMessage("sword", "System")
-      task.wait(0.05)
+      task.wait(0.1)
 
-      -- Wait up to 1 second for sword to appear
+      -- Wait up to 3 seconds for sword to appear
       local backpack = LocalPlayer.Backpack
       local sword = nil
-      for i = 1, 20 do
+      for i = 1, 30 do
          sword = backpack:FindFirstChild("LinkedSword")
          if sword then break end
-         task.wait(0.05)
+         task.wait(0.1)
       end
       if not sword then
          error("No LinkedSword found after waiting.")
       end
 
-      -- 5. freeze me (disable anti‑crash temporarily, will thaw after 0.5s)
+      -- 4. freeze me (disable anti‑crash first)
       local oldAntiCrash = antiCrashSelfEnabled
       antiCrashSelfEnabled = false
       sendMessage("freeze me", "System")
-      
-      -- Spawn a timer to thaw me after exactly 0.5 seconds
-      task.spawn(function()
-         task.wait(0.5)
-         sendMessage("thaw me", "System")
-         antiCrashSelfEnabled = oldAntiCrash
-      end)
+      task.wait(0.02)
 
-      -- 6. Equip, drop, move sword to victim's HRP (this happens while I'm frozen)
+      -- 5. Equip, drop, move sword to victim's HRP
       local char = LocalPlayer.Character
       if not char then error("No character.") end
       local humanoid = char:FindFirstChildOfClass("Humanoid")
       if not humanoid then error("No Humanoid.") end
 
       humanoid:EquipTool(sword)
-      task.wait(0.05)
+      task.wait(0.1)
       local equipped = char:FindFirstChild("LinkedSword")
       if not equipped then
          error("Failed to equip sword.")
       end
 
       equipped.Parent = Workspace
-      task.wait(0.01)
+      task.wait(0.05)
       breakWelds(equipped)
 
       local victimHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
       if not victimHRP then
          error("Victim has no HRP.")
       end
-      local targetCFrame = victimHRP.CFrame * CFrame.new(0, 0, 0)
+      local targetCFrame = victimHRP.CFrame * CFrame.new(0, 0, 0)  -- exactly on HRP
       moveToolWithSyncMove(equipped, targetCFrame)
       unanchorAll(equipped)
 
-      -- 7. Wait for freeze to expire (timer already running) and then after 0.6s send reset
-      -- We'll wait a bit more to ensure the move is done and freeze is cleared
-      task.wait(0.2)  -- extra buffer for move completion
-      -- Now we wait an additional 0.6 seconds after the whole process, then reset victim
-      task.wait(0.6)
-      sendMessage("reset " .. plr.Name, "System")
-
+      -- 6. Thaw me and re‑enable anti‑crash
+      sendMessage("thaw me", "System")
+      antiCrashSelfEnabled = oldAntiCrash
       repairBuildingTools()
    end)
 
+   -- Always reset afkRunning
    afkRunning = false
    if not success then
       warn("[Kick] Error: " .. tostring(err))
@@ -631,6 +616,7 @@ local function clearAll()
       end
    end)
 
+   -- Guaranteed cleanup
    clrRunning = false
    repairBuildingTools()
    if not success then
@@ -1110,7 +1096,7 @@ MiscTab:CreateButton({
       end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
-      notify(".kick", "speed 0 → freeze → size nan → sword me → freeze me (0.5s) → move sword → thaw me → reset victim")
+      notify(".kick", "1‑sword: freeze victim, size nan, sword me, freeze me, move sword")
       notify(".afk", ".afk loaded")
       notify(".gearbanme", "Manual gearban")
       notify(".clr", "Deletes Part/Truss/Seat (fixed for repeated use)")
@@ -1133,7 +1119,7 @@ MiscTab:CreateButton({
       print("===== KOHLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – speed 0 → freeze → size nan → sword me → freeze me (0.5s) → move sword → thaw me → reset victim")
+      print(".kick <partial> – freeze victim → size nan → sword me → freeze me → move sword to victim")
       print(".gearbanme <partial> – manual gearban (portable)")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
       print(".clr – DELETE ONLY 'Part', 'Truss', 'Seat' (now works every time)")
@@ -1592,7 +1578,7 @@ task.spawn(function()
    task.wait(1.5)
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Full version loaded"},
-      {".kick", "speed 0 → freeze → size nan → sword me → freeze me (0.5s) → move sword → thaw me → reset victim"},
+      {".kick", "1‑sword: freeze victim, size nan, sword me, freeze me, move sword"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
       {"Monitor commands", "Use 'all' for everyone (auto‑adds new players)"},
@@ -1607,6 +1593,6 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print("Kick: speed 0 → freeze → size nan → sword me → freeze me (0.5s) → move sword → thaw me → reset victim.")
+print("Kick: freeze victim → size nan → sword me → freeze me → move sword to victim.")
 print(".clr now works reliably every time.")
 print("Anti-Jail fixed – now checks both Name and DisplayName for jail models.")
