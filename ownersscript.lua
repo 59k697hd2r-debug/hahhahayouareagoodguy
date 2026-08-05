@@ -1,11 +1,12 @@
 -- ============================================
--- KOHLS ADMIN HOUSE X – FIXED (1‑SWORD KICK)
+-- KOHLS ADMIN HOUSE X – FIXED (1‑SWORD KICK) + ANTIBH (case‑sensitive)
 -- ============================================
 -- Fixed monitoring for other players (crash, death, punish, jail) and self‑jail.
 -- Now checks both Name and DisplayName for jail models.
 -- All original features (monitors, clear, killbrick, loaders, pad claimer, troll, etc.) unchanged.
 -- KICK SEQUENCE: speed 0 → freeze → size nan → sword me → freeze me → move sword → wait 0.5s → thaw me (NO reset)
 -- Added /.(kickall – kicks all unprotected players sequentially with 0.8s delay, runs once and stops
+-- Added .antibh – toggles automatic ".ungear <name>" for any player within 8 studs holding "BanHammer" (exact case)
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -92,6 +93,11 @@ local crashConn, deathConn, punishConn, jailConn = nil, nil, nil, nil
 -- Gearban monitor
 local gearbanMonitored = {}
 local gearbanLastSent = {}
+
+-- Anti-BanHammer monitor
+local antibhEnabled = false
+local antibhCooldown = {}  -- key: player name, value: last ungear time
+local ANTIBH_COOLDOWN = 2.0  -- seconds
 
 local lastActionTime = {}
 local punishDisappearTime = {}
@@ -336,6 +342,55 @@ local function removeGearbanMonitor(username)
    end
    return false
 end
+
+-- ===== ANTI‑BANHAMMER MONITOR LOOP (CASE‑SENSITIVE) =====
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if not antibhEnabled then continue end
+        local localChar = LocalPlayer.Character
+        if not localChar then continue end
+        local localHRP = localChar:FindFirstChild("HumanoidRootPart")
+        if not localHRP then continue end
+        local localPos = localHRP.Position
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr == LocalPlayer then continue end
+            local char = plr.Character
+            if not char then continue end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if not hrp then continue end
+            if (hrp.Position - localPos).Magnitude > 8 then continue end
+            -- Check inventory for BanHammer (EXACT case)
+            local hasHammer = false
+            local backpack = plr:FindFirstChildOfClass("Backpack")
+            if backpack then
+                for _, tool in ipairs(backpack:GetChildren()) do
+                    if tool:IsA("Tool") and tool.Name == "BanHammer" then
+                        hasHammer = true
+                        break
+                    end
+                end
+            end
+            if not hasHammer then
+                -- check character tools
+                for _, tool in ipairs(char:GetChildren()) do
+                    if tool:IsA("Tool") and tool.Name == "BanHammer" then
+                        hasHammer = true
+                        break
+                    end
+                end
+            end
+            if hasHammer then
+                local now = tick()
+                local key = plr.Name
+                if not antibhCooldown[key] or now - antibhCooldown[key] >= ANTIBH_COOLDOWN then
+                    antibhCooldown[key] = now
+                    sendMessage(".ungear " .. plr.Name, "System")
+                end
+            end
+        end
+    end
+end)
 
 -- ===== SELF ANTI‑CRASH =====
 task.spawn(function()
@@ -1459,6 +1514,14 @@ TrollTab:CreateButton({
    end
 })
 
+-- ===== ANTI‑BANHAMMER UI TOGGLE =====
+TrollTab:CreateToggle({
+   Name = "Anti-BanHammer (ungear nearby)",
+   CurrentValue = false,
+   Flag = "AntiBH",
+   Callback = function(v) antibhEnabled = v end
+})
+
 -- ===== CHAT HOOK =====
 local old
 old = hookmetamethod(game, "__namecall", function(self, ...)
@@ -1591,6 +1654,19 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             if removeBanMonitor(username) then print("[Ban] Stopped " .. username) else print("[Ban] Not monitored.") end
          else print("[Ban] Specify username.") end
          if silentMode then return nil end
+      -- Anti-BanHammer commands
+      elseif msg == ".antibh" then
+         antibhEnabled = not antibhEnabled
+         print("[AntiBH] " .. (antibhEnabled and "Enabled" or "Disabled"))
+         local uiToggle = TrollTab:GetToggle("AntiBH")
+         if uiToggle then uiToggle:Set(antibhEnabled) end
+         if silentMode then return nil end
+      elseif msg == ".unantibh" then
+         antibhEnabled = false
+         print("[AntiBH] Disabled")
+         local uiToggle = TrollTab:GetToggle("AntiBH")
+         if uiToggle then uiToggle:Set(false) end
+         if silentMode then return nil end
       end
    end
    return old and old(self, ...)
@@ -1620,7 +1696,8 @@ task.spawn(function()
       {"Monitor commands", "Use 'all' for everyone (auto‑adds new players)"},
       {"Silent mode", "Toggle in Misc"},
       {".clr", "Now works repeatedly without re‑execution"},
-      {"Anti-Jail", "Fixed – now checks both Name and DisplayName"}
+      {"Anti-Jail", "Fixed – now checks both Name and DisplayName"},
+      {".antibh", "Toggle – ungear BanHammer holders within 8 studs (case‑sensitive)"}
    }
    for _, n in ipairs(notifications) do
       notify(n[1], n[2])
@@ -1633,3 +1710,4 @@ print("Kick: speed 0 → freeze → size nan → sword me → freeze me → move
 print("/.(kickall – runs once, kicks all unprotected players with 0.8s delay between kicks.")
 print(".clr now works reliably every time.")
 print("Anti-Jail fixed – now checks both Name and DisplayName for jail models.")
+print(".antibh – toggles automatic '.ungear' on any player within 8 studs holding BanHammer (exact case).")
