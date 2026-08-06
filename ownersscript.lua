@@ -1,12 +1,9 @@
 -- ============================================
--- KOHLS ADMIN HOUSE X – FIXED (1‑SWORD KICK) + ANTIBH (case‑sensitive)
+-- KOHLS ADMIN HOUSE X – CUSTOM TOOL KICK (CreatePart + SyncResize + SyncAnchor, size 7x7x7)
 -- ============================================
--- Fixed monitoring for other players (crash, death, punish, jail) and self‑jail.
--- Now checks both Name and DisplayName for jail models.
--- All original features (monitors, clear, killbrick, loaders, pad claimer, troll, etc.) unchanged.
--- KICK SEQUENCE: speed 0 → freeze → size nan → sword me → freeze me → move sword → wait 0.5s → thaw me (NO reset)
--- Added /.(kickall – kicks all unprotected players sequentially with 0.8s delay, runs once and stops
--- Added .antibh – toggles automatic ".ungear <name>" for any player within 8 studs holding "BanHammer" (exact case)
+-- Replaces LinkedSword with custom Tool creation, resize to 7x7x7, and anchoring to prevent despawn.
+-- KICK SEQUENCE: speed 0 → freeze → size nan → freeze me → create Tool at victim HRP → resize Handle to 7x7x7 → anchor Handle → wait 0.5s → thaw me
+-- All other features (antibh, monitors, etc.) unchanged.
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -502,7 +499,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== KICK SEQUENCE (NO reset, wait 0.5s then thaw) =====
+-- ===== KICK SEQUENCE (Custom Tool: CreatePart + SyncResize + SyncAnchor, size 7x7x7) =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    afkRunning = true
@@ -513,53 +510,86 @@ local function KickPlayer(target)
          error("Invalid target.")
       end
 
-      -- Send pre‑sword commands with zero delay
+      -- Send pre‑kick commands
       sendMessage("speed " .. plr.Name .. " 0", "System")
       sendMessage("freeze " .. plr.Name, "System")
       sendMessage("size " .. plr.Name .. " nan", "System")
-      sendMessage("sword", "System")
-
-      -- Wait for sword
-      local backpack = LocalPlayer.Backpack
-      local sword = nil
-      for i = 1, 20 do
-         sword = backpack:FindFirstChild("LinkedSword")
-         if sword then break end
-         task.wait(0.05)
-      end
-      if not sword then
-         error("No LinkedSword found after waiting.")
-      end
 
       -- Freeze me and disable anti‑crash
       local oldAntiCrash = antiCrashSelfEnabled
       antiCrashSelfEnabled = false
       sendMessage("freeze me", "System")
 
-      -- Equip, drop, move sword
-      local char = LocalPlayer.Character
-      if not char then error("No character.") end
-      local humanoid = char:FindFirstChildOfClass("Humanoid")
-      if not humanoid then error("No Humanoid.") end
+      -- Get victim's HRP CFrame
+      local victimChar = plr.Character
+      if not victimChar then error("Victim has no character.") end
+      local victimHRP = victimChar:FindFirstChild("HumanoidRootPart")
+      if not victimHRP then error("Victim has no HRP.") end
+      local victimCF = victimHRP.CFrame
 
-      humanoid:EquipTool(sword)
-      task.wait(0.05)
-      local equipped = char:FindFirstChild("LinkedSword")
-      if not equipped then
-         error("Failed to equip sword.")
+      -- Get SyncAPI endpoint
+      local endpoint = getSyncAPI()
+      if not endpoint then error("Building Tools SyncAPI not available.") end
+
+      -- Create the Tool at victim's HRP
+      local createSuccess, createErr = pcall(function()
+         endpoint:InvokeServer("CreatePart", "Tool", victimCF, workspace)
+      end)
+      if not createSuccess then
+         error("CreatePart failed: " .. tostring(createErr))
       end
 
-      equipped.Parent = Workspace
-      task.wait(0.01)
-      breakWelds(equipped)
-
-      local victimHRP = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-      if not victimHRP then
-         error("Victim has no HRP.")
+      -- Wait for the tool to appear
+      local tool = nil
+      for i = 1, 30 do
+         tool = workspace:FindFirstChild("Tool")
+         if tool then break end
+         task.wait(0.05)
       end
-      local targetCFrame = victimHRP.CFrame * CFrame.new(0, 0, 0)
-      moveToolWithSyncMove(equipped, targetCFrame)
-      unanchorAll(equipped)
+      if not tool then
+         error("Created Tool not found in workspace.")
+      end
+
+      -- Find the Handle inside the tool
+      local handle = tool:FindFirstChild("Handle")
+      if not handle or not handle:IsA("BasePart") then
+         error("Tool has no Handle part.")
+      end
+
+      -- Resize Handle to 7x7x7
+      local resizeSuccess, resizeErr = pcall(function()
+         endpoint:InvokeServer("SyncResize", {
+            {
+               Part = handle,
+               CFrame = handle.CFrame, -- keep same position
+               Size = Vector3.new(7, 7, 7)
+            }
+         })
+      end
+      if not resizeSuccess then
+         warn("[Kick] SyncResize failed: " .. tostring(resizeErr))
+         -- Fallback: set size directly
+         handle.Size = Vector3.new(7, 7, 7)
+      end
+
+      -- Anchor the handle using SyncAnchor to prevent it from being cleaned up
+      local anchorSuccess, anchorErr = pcall(function()
+         endpoint:InvokeServer("SyncAnchor", {
+            {
+               Part = handle,
+               CFrame = handle.CFrame,
+               Anchored = true
+            }
+         })
+      end
+      if not anchorSuccess then
+         warn("[Kick] SyncAnchor failed: " .. tostring(anchorErr))
+         -- Fallback: anchor directly
+         handle.Anchored = true
+      else
+         -- Ensure anchored property is set (remote might not change it locally)
+         handle.Anchored = true
+      end
 
       -- Wait 0.5 seconds, then thaw me (no reset)
       task.wait(0.5)
@@ -598,12 +628,10 @@ local function KickAll()
             end
          end
          if not isProtected then
-            -- Wait until afkRunning is false
             while afkRunning do task.wait(0.05) end
             KickPlayer(plr.Name)
-            -- Wait for kick to finish
             while afkRunning do task.wait(0.05) end
-            task.wait(0.8)  -- delay between kicks
+            task.wait(0.8)
          end
       end
       kickAllRunning = false
@@ -1178,7 +1206,7 @@ MiscTab:CreateButton({
       end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
-      notify(".kick", "speed 0 → freeze → size nan → sword me → freeze me → move sword → wait 0.5s → thaw me")
+      notify(".kick", "speed 0 → freeze → size nan → freeze me → create Tool at victim HRP → resize Handle to 7x7x7 → anchor Handle → wait 0.5s → thaw me")
       notify("/.(kickall", "Kicks all unprotected players sequentially, runs once (0.8s delay)")
       notify(".afk", ".afk loaded")
       notify(".gearbanme", "Manual gearban")
@@ -1202,7 +1230,7 @@ MiscTab:CreateButton({
       print("===== KOHLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – speed 0 → freeze → size nan → sword me → freeze me → move sword → wait 0.5s → thaw me")
+      print(".kick <partial> – speed 0 → freeze → size nan → freeze me → create Tool at victim HRP → resize Handle to 7x7x7 → anchor Handle → wait 0.5s → thaw me")
       print("/.(kickall – kicks all unprotected players sequentially, runs once (0.8s delay)")
       print(".gearbanme <partial> – manual gearban (portable)")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
@@ -1689,7 +1717,7 @@ task.spawn(function()
    task.wait(1.5)
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Full version loaded"},
-      {".kick", "speed 0 → freeze → size nan → sword me → freeze me → move sword → wait 0.5s → thaw me"},
+      {".kick", "speed 0 → freeze → size nan → freeze me → create Tool at victim HRP → resize Handle to 7x7x7 → anchor Handle → wait 0.5s → thaw me"},
       {"/.(kickall", "Kicks all unprotected players sequentially, runs once (0.8s delay)"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
@@ -1706,7 +1734,7 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print("Kick: speed 0 → freeze → size nan → sword me → freeze me → move sword → wait 0.5s → thaw me (NO reset).")
+print("Kick: speed 0 → freeze → size nan → freeze me → create Tool at victim HRP → resize Handle to 7x7x7 → anchor Handle → wait 0.5s → thaw me (NO reset).")
 print("/.(kickall – runs once, kicks all unprotected players with 0.8s delay between kicks.")
 print(".clr now works reliably every time.")
 print("Anti-Jail fixed – now checks both Name and DisplayName for jail models.")
