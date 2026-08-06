@@ -7,7 +7,15 @@
 -- NO sword commands remain.
 -- ============================================
 
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+-- Robust Rayfield loader with error checking
+local rayfieldFunc
+local success, err = pcall(function()
+    rayfieldFunc = loadstring(game:HttpGet('https://sirius.menu/rayfield'))
+end)
+if not success or not rayfieldFunc then
+    error("Rayfield loading failed: " .. tostring(err or "unknown"))
+end
+local Rayfield = rayfieldFunc()
 
 local Window = Rayfield:CreateWindow({
    Name = "KOHLS ADMIN HOUSE X",
