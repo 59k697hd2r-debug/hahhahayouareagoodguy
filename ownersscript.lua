@@ -1,10 +1,10 @@
 -- ============================================
--- KOHLS ADMIN HOUSE X – CUSTOM TOOL KICK (NO SWORD)
+-- KOHLS ADMIN HOUSE X – FINAL (CUSTOM TOOL KICK + ANCHOR, NO SWORD)
 -- ============================================
--- Replaces LinkedSword entirely with custom Tool creation, resize to 7x7x7, and anchor.
--- KICK SEQUENCE: speed 0 → freeze → size nan → freeze me → create Tool at victim HRP → resize Handle to 7x7x7 → anchor Handle → wait 0.5s → thaw me
--- All other features (antibh, monitors, etc.) unchanged.
--- NO SWORD COMMANDS OR REFERENCES REMAIN.
+-- All features: monitors, clear, killbrick, loaders, pad claimer, troll, antibh, etc.
+-- KICK: speed 0 → freeze → size nan → freeze me → CreatePart "Tool" at victim HRP →
+--       SyncResize Handle to 7x7x7 → SyncAnchor Anchored=true → wait 0.5s → thaw me
+-- NO sword commands remain.
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -94,8 +94,8 @@ local gearbanLastSent = {}
 
 -- Anti-BanHammer monitor
 local antibhEnabled = false
-local antibhCooldown = {}  -- key: player name, value: last ungear time
-local ANTIBH_COOLDOWN = 2.0  -- seconds
+local antibhCooldown = {}
+local ANTIBH_COOLDOWN = 2.0
 
 local lastActionTime = {}
 local punishDisappearTime = {}
@@ -268,7 +268,6 @@ task.spawn(function()
             local hrp = char:FindFirstChild("HumanoidRootPart")
             if not hrp then continue end
             if (hrp.Position - localPos).Magnitude > 8 then continue end
-            -- Check inventory for BanHammer (EXACT case)
             local hasHammer = false
             local backpack = plr:FindFirstChildOfClass("Backpack")
             if backpack then
@@ -280,7 +279,6 @@ task.spawn(function()
                 end
             end
             if not hasHammer then
-                -- check character tools
                 for _, tool in ipairs(char:GetChildren()) do
                     if tool:IsA("Tool") and tool.Name == "BanHammer" then
                         hasHammer = true
@@ -410,7 +408,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== KICK SEQUENCE (Custom Tool: CreatePart + SyncResize + SyncAnchor, size 7x7x7, NO SWORD) =====
+-- ===== KICK SEQUENCE (Custom Tool: CreatePart + SyncResize + SyncAnchor, size 7x7x7) =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    afkRunning = true
@@ -421,28 +419,24 @@ local function KickPlayer(target)
          error("Invalid target.")
       end
 
-      -- Send pre‑kick commands
       sendMessage("speed " .. plr.Name .. " 0", "System")
       sendMessage("freeze " .. plr.Name, "System")
       sendMessage("size " .. plr.Name .. " nan", "System")
 
-      -- Freeze me and disable anti‑crash
       local oldAntiCrash = antiCrashSelfEnabled
       antiCrashSelfEnabled = false
       sendMessage("freeze me", "System")
 
-      -- Get victim's HRP CFrame
       local victimChar = plr.Character
       if not victimChar then error("Victim has no character.") end
       local victimHRP = victimChar:FindFirstChild("HumanoidRootPart")
       if not victimHRP then error("Victim has no HRP.") end
       local victimCF = victimHRP.CFrame
 
-      -- Get SyncAPI endpoint
       local endpoint = getSyncAPI()
       if not endpoint then error("Building Tools SyncAPI not available.") end
 
-      -- Create the Tool at victim's HRP
+      -- Create Tool
       local createSuccess, createErr = pcall(function()
          endpoint:InvokeServer("CreatePart", "Tool", victimCF, workspace)
       end)
@@ -450,7 +444,6 @@ local function KickPlayer(target)
          error("CreatePart failed: " .. tostring(createErr))
       end
 
-      -- Wait for the tool to appear
       local tool = nil
       for i = 1, 30 do
          tool = workspace:FindFirstChild("Tool")
@@ -461,18 +454,17 @@ local function KickPlayer(target)
          error("Created Tool not found in workspace.")
       end
 
-      -- Find the Handle inside the tool
       local handle = tool:FindFirstChild("Handle")
       if not handle or not handle:IsA("BasePart") then
          error("Tool has no Handle part.")
       end
 
-      -- Resize Handle to 7x7x7
+      -- Resize to 7x7x7
       local resizeSuccess, resizeErr = pcall(function()
          endpoint:InvokeServer("SyncResize", {
             {
                Part = handle,
-               CFrame = handle.CFrame, -- keep same position
+               CFrame = handle.CFrame,
                Size = Vector3.new(7, 7, 7)
             }
          })
@@ -482,7 +474,7 @@ local function KickPlayer(target)
          handle.Size = Vector3.new(7, 7, 7)
       end
 
-      -- Anchor the handle using SyncAnchor to prevent cleanup
+      -- Anchor with SyncAnchor
       local anchorSuccess, anchorErr = pcall(function()
          endpoint:InvokeServer("SyncAnchor", {
             {
@@ -499,7 +491,6 @@ local function KickPlayer(target)
          handle.Anchored = true
       end
 
-      -- Wait 0.5 seconds, then thaw me (no reset)
       task.wait(0.5)
       sendMessage("thaw me", "System")
       antiCrashSelfEnabled = oldAntiCrash
@@ -516,18 +507,15 @@ local function KickPlayer(target)
    end
 end
 
--- ===== KICKALL (single pass: kicks all unprotected players sequentially with 0.8s delay, then stops) =====
+-- ===== KICKALL =====
 local kickAllRunning = false
 local function KickAll()
    if kickAllRunning then return end
    kickAllRunning = true
-
    task.spawn(function()
       local players = Players:GetPlayers()
       for _, plr in ipairs(players) do
          if plr == LocalPlayer then continue end
-
-         -- Check if protected (in crashMonitored)
          local isProtected = false
          for _, name in ipairs(crashMonitored) do
             if name:lower() == plr.Name:lower() then
@@ -570,18 +558,14 @@ local function GearbanManual(target)
    afkRunning = false
 end
 
--- ===== CLEAR FUNCTIONS (with robust fix for repeated use) =====
+-- ===== CLEAR FUNCTIONS =====
 local function clearAll()
    if clrRunning then return end
    clrRunning = true
    clrStop = false
-
    local success, err = pcall(function()
       local endpoint = getSyncAPI()
-      if not endpoint then
-         error("Building Tools not found.")
-      end
-
+      if not endpoint then error("Building Tools not found.") end
       local targetNames = {"Part", "Truss", "Seat"}
       local instances = {}
       for _, v in pairs(workspace:GetDescendants()) do
@@ -595,51 +579,28 @@ local function clearAll()
             end
          end
       end
-
       if #instances == 0 then
          print("[.clr] No matching parts found.")
-         pcall(function()
-            StarterGui:SetCore("SendNotification", { Title = ".clr", Text = "No matching parts found.", Duration = 3 })
-         end)
+         pcall(function() StarterGui:SetCore("SendNotification", { Title = ".clr", Text = "No matching parts found.", Duration = 3 }) end)
          return
       end
-
       print("[.clr] Found " .. #instances .. " instances. Deleting in batches of 5000...")
       local total = 0
       local batchSize = 5000
-
       for i = 1, #instances, batchSize do
          if clrStop then break end
          local batch = {}
-         for j = i, math.min(i + batchSize - 1, #instances) do
-            table.insert(batch, instances[j])
-         end
-         local successBatch, errBatch = pcall(function()
-            endpoint:InvokeServer("Remove", batch)
-         end)
-         if successBatch then
-            total = total + #batch
-         else
-            warn("[.clr] Batch remove failed: " .. tostring(errBatch))
-         end
+         for j = i, math.min(i + batchSize - 1, #instances) do table.insert(batch, instances[j]) end
+         local successBatch, errBatch = pcall(function() endpoint:InvokeServer("Remove", batch) end)
+         if successBatch then total = total + #batch else warn("[.clr] Batch remove failed: " .. tostring(errBatch)) end
          task.wait(0.01)
       end
-
-      if clrStop then
-         print("[.clr] Halted. Removed " .. total .. " so far.")
-      else
-         print("[.clr] Removed " .. total .. " instances.")
-         pcall(function()
-            StarterGui:SetCore("SendNotification", { Title = ".clr", Text = "Removed " .. total .. " Part/Truss/Seat parts.", Duration = 3 })
-         end)
-      end
+      if clrStop then print("[.clr] Halted. Removed " .. total .. " so far.") else print("[.clr] Removed " .. total .. " instances.") end
+      pcall(function() StarterGui:SetCore("SendNotification", { Title = ".clr", Text = "Removed " .. total .. " Part/Truss/Seat parts.", Duration = 3 }) end)
    end)
-
    clrRunning = false
    repairBuildingTools()
-   if not success then
-      warn("[.clr] Error: " .. tostring(err))
-   end
+   if not success then warn("[.clr] Error: " .. tostring(err)) end
 end
 
 local function adminClear()
@@ -697,9 +658,7 @@ local function trollClear()
    local endpoint = getSyncAPI()
    if not endpoint then
       print("[.trollclr] Building Tools not found.")
-      pcall(function()
-         StarterGui:SetCore("SendNotification", { Title = "Troll Clear", Text = "Building Tools not found!", Duration = 3 })
-      end)
+      pcall(function() StarterGui:SetCore("SendNotification", { Title = "Troll Clear", Text = "Building Tools not found!", Duration = 3 }) end)
       repairBuildingTools()
       return
    end
@@ -716,9 +675,7 @@ local function trollClear()
    end
    if #anchorList == 0 then
       print("[.trollclr] No matching parts found.")
-      pcall(function()
-         StarterGui:SetCore("SendNotification", { Title = "Troll Clear", Text = "No matching parts found.", Duration = 3 })
-      end)
+      pcall(function() StarterGui:SetCore("SendNotification", { Title = "Troll Clear", Text = "No matching parts found.", Duration = 3 }) end)
       repairBuildingTools()
       return
    end
@@ -739,22 +696,17 @@ local function trollClear()
       if not success then warn("[.trollclr] SyncCollision failed: " .. tostring(err)) end
       task.wait(0.2)
    end
-   pcall(function()
-      StarterGui:SetCore("SendNotification", { Title = "Troll Clear", Text = "Unanchored & disabled collision for " .. #anchorList .. " parts.", Duration = 3 })
-   end)
+   pcall(function() StarterGui:SetCore("SendNotification", { Title = "Troll Clear", Text = "Unanchored & disabled collision for " .. #anchorList .. " parts.", Duration = 3 }) end)
    print("[.trollclr] Done.")
    repairBuildingTools()
 end
 
--- ===== BAN MONITOR (detects rejoins) =====
+-- ===== BAN MONITOR =====
 task.spawn(function()
    local function kickOnRejoin(username)
       local plr = resolveTarget(username)
-      if plr and plr ~= "all" then
-         task.spawn(KickPlayer, plr.Name)
-      end
+      if plr and plr ~= "all" then task.spawn(KickPlayer, plr.Name) end
    end
-
    while true do
       task.wait(1.5)
       for _, username in ipairs(banMonitored) do
@@ -763,9 +715,7 @@ task.spawn(function()
             local present = plr.Character and plr.Character.Parent == workspace
             if present then
                if banWasAbsent[username] then
-                  pcall(function()
-                     StarterGui:SetCore("SendNotification", { Title = "Ban Monitor", Text = username .. " is active!", Duration = 3 })
-                  end)
+                  pcall(function() StarterGui:SetCore("SendNotification", { Title = "Ban Monitor", Text = username .. " is active!", Duration = 3 }) end)
                   task.delay(0.5, function() kickOnRejoin(username) end)
                   banWasAbsent[username] = false
                end
@@ -777,12 +727,10 @@ task.spawn(function()
    end
 end)
 
--- ===== PROTECTIVE MONITORING LOOP (FIXED) =====
+-- ===== PROTECTIVE MONITORING LOOP =====
 task.spawn(function()
    while true do
       task.wait(0.05)
-      
-      -- Clean invalid entries from all lists
       for i = #crashMonitored, 1, -1 do
          local plr = resolveTarget(crashMonitored[i])
          if not plr or plr == "all" then table.remove(crashMonitored, i) end
@@ -809,7 +757,6 @@ task.spawn(function()
          if not plr or plr == "all" then table.remove(jailMonitored, i) end
       end
 
-      -- Crash monitor
       for _, storedName in ipairs(crashMonitored) do
          local plr = resolveTarget(storedName)
          if plr and plr ~= "all" and plr.Character then
@@ -825,7 +772,6 @@ task.spawn(function()
          end
       end
 
-      -- Death monitor
       for _, storedName in ipairs(deathMonitored) do
          local plr = resolveTarget(storedName)
          if plr and plr ~= "all" and plr.Character then
@@ -841,7 +787,6 @@ task.spawn(function()
          end
       end
 
-      -- Punish monitor
       for _, storedName in ipairs(punishMonitored) do
          local plr = resolveTarget(storedName)
          if plr and plr ~= "all" then
@@ -871,12 +816,9 @@ task.spawn(function()
          end
       end
 
-      -- Self jail (now checks both Name and DisplayName)
       if selfJailEnabled then
          local jailModel = workspace:FindFirstChild(LocalPlayer.Name .. "'s jail")
-         if not jailModel then
-            jailModel = workspace:FindFirstChild(LocalPlayer.DisplayName .. "'s jail")
-         end
+         if not jailModel then jailModel = workspace:FindFirstChild(LocalPlayer.DisplayName .. "'s jail") end
          if jailModel then
             local now = tick()
             local key = "self_jail"
@@ -887,14 +829,11 @@ task.spawn(function()
          end
       end
 
-      -- Jail others (now checks both Name and DisplayName)
       for _, storedName in ipairs(jailMonitored) do
          local plr = resolveTarget(storedName)
          if plr and plr ~= "all" then
             local jailModel = workspace:FindFirstChild(plr.Name .. "'s jail")
-            if not jailModel then
-               jailModel = workspace:FindFirstChild(plr.DisplayName .. "'s jail")
-            end
+            if not jailModel then jailModel = workspace:FindFirstChild(plr.DisplayName .. "'s jail") end
             if jailModel then
                local now = tick()
                local key = plr.Name .. "_jail"
@@ -1108,9 +1047,7 @@ MiscTab:CreateButton({
    Name = "Reshow Notifications",
    Callback = function()
       local function notify(title, text)
-         pcall(function()
-            StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 3 })
-         end)
+         pcall(function() StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = 3 }) end)
       end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
@@ -1466,7 +1403,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
       local msg = string.lower(args[1])
       local target
 
-      -- Check for /.(kickall
       if string.sub(msg, 1, 10) == "/.(kickall" then
          task.spawn(KickAll)
          if silentMode then return nil end
@@ -1590,7 +1526,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             if removeBanMonitor(username) then print("[Ban] Stopped " .. username) else print("[Ban] Not monitored.") end
          else print("[Ban] Specify username.") end
          if silentMode then return nil end
-      -- Anti-BanHammer commands
       elseif msg == ".antibh" then
          antibhEnabled = not antibhEnabled
          print("[AntiBH] " .. (antibhEnabled and "Enabled" or "Disabled"))
