@@ -1,9 +1,10 @@
 -- ============================================
--- KOHLS ADMIN HOUSE X – CUSTOM TOOL KICK (CreatePart + SyncResize + SyncAnchor, size 7x7x7)
+-- KOHLS ADMIN HOUSE X – CUSTOM TOOL KICK (NO SWORD)
 -- ============================================
--- Replaces LinkedSword with custom Tool creation, resize to 7x7x7, and anchoring to prevent despawn.
+-- Replaces LinkedSword entirely with custom Tool creation, resize to 7x7x7, and anchor.
 -- KICK SEQUENCE: speed 0 → freeze → size nan → freeze me → create Tool at victim HRP → resize Handle to 7x7x7 → anchor Handle → wait 0.5s → thaw me
 -- All other features (antibh, monitors, etc.) unchanged.
+-- NO SWORD COMMANDS OR REFERENCES REMAIN.
 -- ============================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -191,96 +192,6 @@ local function getSyncAPI()
       end
    end
    return nil
-end
-
--- Helper: ensure tool has PrimaryPart (Handle or first BasePart)
-local function ensurePrimaryPart(tool)
-   if not tool then return nil end
-   if tool.PrimaryPart then return tool.PrimaryPart end
-   local primary = tool:FindFirstChild("Handle")
-   if not primary or not primary:IsA("BasePart") then
-      for _, child in ipairs(tool:GetChildren()) do
-         if child:IsA("BasePart") then
-            primary = child
-            break
-         end
-      end
-   end
-   if primary then
-      tool.PrimaryPart = primary
-      return primary
-   end
-   return nil
-end
-
--- Helper: unanchor all BaseParts in a model
-local function unanchorAll(model)
-   for _, part in ipairs(model:GetDescendants()) do
-      if part:IsA("BasePart") then
-         part.Anchored = false
-      end
-   end
-end
-
--- Helper: break all Motor6D and Weld connections on a tool
-local function breakWelds(tool)
-   for _, child in ipairs(tool:GetDescendants()) do
-      if child:IsA("Motor6D") or child:IsA("Weld") then
-         child:Destroy()
-      end
-   end
-end
-
--- Helper: get BasePart (Handle) from a tool
-local function getBasePart(tool)
-   if not tool then return nil end
-   local part = tool:FindFirstChild("Handle")
-   if part and part:IsA("BasePart") then
-      return part
-   end
-   for _, child in ipairs(tool:GetChildren()) do
-      if child:IsA("BasePart") then
-         return child
-      end
-   end
-   return nil
-end
-
--- Helper: move tool using SyncMove (Cobalt format) with repair
-local function moveToolWithSyncMove(tool, targetCFrame)
-   if not tool then return false end
-   local endpoint = getSyncAPI()
-   if not endpoint then
-      if tool.PrimaryPart then
-         tool:SetPrimaryPartCFrame(targetCFrame)
-      else
-         for _, part in ipairs(tool:GetDescendants()) do
-            if part:IsA("BasePart") then part.CFrame = targetCFrame end
-         end
-      end
-      repairBuildingTools()
-      return true
-   end
-   local handle = getBasePart(tool)
-   if not handle then
-      if tool.PrimaryPart then tool:SetPrimaryPartCFrame(targetCFrame) end
-      repairBuildingTools()
-      return true
-   end
-   local moveList = {
-      { Part = handle, CFrame = targetCFrame },
-      { Pivot = targetCFrame, Model = tool }
-   }
-   local success, err = pcall(function()
-      endpoint:InvokeServer("SyncMove", moveList)
-   end)
-   repairBuildingTools()
-   if not success then
-      warn("[Kick] SyncMove failed: " .. tostring(err))
-      if tool.PrimaryPart then tool:SetPrimaryPartCFrame(targetCFrame) end
-      return false
-   end
-   return true
 end
 
 -- ===== GEARBAN MONITOR =====
@@ -499,7 +410,7 @@ local function SetUnAFK(target)
    afkRunning = false
 end
 
--- ===== KICK SEQUENCE (Custom Tool: CreatePart + SyncResize + SyncAnchor, size 7x7x7) =====
+-- ===== KICK SEQUENCE (Custom Tool: CreatePart + SyncResize + SyncAnchor, size 7x7x7, NO SWORD) =====
 local function KickPlayer(target)
    if not kickEnabled or afkRunning then return end
    afkRunning = true
@@ -568,11 +479,10 @@ local function KickPlayer(target)
       end
       if not resizeSuccess then
          warn("[Kick] SyncResize failed: " .. tostring(resizeErr))
-         -- Fallback: set size directly
          handle.Size = Vector3.new(7, 7, 7)
       end
 
-      -- Anchor the handle using SyncAnchor to prevent it from being cleaned up
+      -- Anchor the handle using SyncAnchor to prevent cleanup
       local anchorSuccess, anchorErr = pcall(function()
          endpoint:InvokeServer("SyncAnchor", {
             {
@@ -584,10 +494,8 @@ local function KickPlayer(target)
       end
       if not anchorSuccess then
          warn("[Kick] SyncAnchor failed: " .. tostring(anchorErr))
-         -- Fallback: anchor directly
          handle.Anchored = true
       else
-         -- Ensure anchored property is set (remote might not change it locally)
          handle.Anchored = true
       end
 
@@ -1206,7 +1114,7 @@ MiscTab:CreateButton({
       end
       notify("KOHLS ADMIN HOUSE X", "All features reloaded")
       task.wait(0.1)
-      notify(".kick", "speed 0 → freeze → size nan → freeze me → create Tool at victim HRP → resize Handle to 7x7x7 → anchor Handle → wait 0.5s → thaw me")
+      notify(".kick", "speed 0 → freeze → size nan → freeze me → create Tool at victim HRP → resize Handle to 7x7x7 → anchor → wait 0.5s → thaw me (NO SWORD)")
       notify("/.(kickall", "Kicks all unprotected players sequentially, runs once (0.8s delay)")
       notify(".afk", ".afk loaded")
       notify(".gearbanme", "Manual gearban")
@@ -1230,7 +1138,7 @@ MiscTab:CreateButton({
       print("===== KOHLS ADMIN COMMANDS (partial name support) =====")
       print(".afk <partial> – freeze, god, ff")
       print(".unafk <partial> – reset")
-      print(".kick <partial> – speed 0 → freeze → size nan → freeze me → create Tool at victim HRP → resize Handle to 7x7x7 → anchor Handle → wait 0.5s → thaw me")
+      print(".kick <partial> – speed 0 → freeze → size nan → freeze me → create Tool at victim HRP → resize Handle to 7x7x7 → anchor → wait 0.5s → thaw me (NO SWORD)")
       print("/.(kickall – kicks all unprotected players sequentially, runs once (0.8s delay)")
       print(".gearbanme <partial> – manual gearban (portable)")
       print("Gearban Monitor: .gearban <partial> (start), .ungearban <partial> (stop), .listgear")
@@ -1717,7 +1625,7 @@ task.spawn(function()
    task.wait(1.5)
    local notifications = {
       {"KOHLS ADMIN HOUSE X", "Full version loaded"},
-      {".kick", "speed 0 → freeze → size nan → freeze me → create Tool at victim HRP → resize Handle to 7x7x7 → anchor Handle → wait 0.5s → thaw me"},
+      {".kick", "speed 0 → freeze → size nan → freeze me → create Tool at victim HRP → resize Handle to 7x7x7 → anchor → wait 0.5s → thaw me (NO SWORD)"},
       {"/.(kickall", "Kicks all unprotected players sequentially, runs once (0.8s delay)"},
       {".workspaceclr", "Deletes everything"},
       {".trollclr", "Unanchor + disable collision"},
@@ -1734,7 +1642,7 @@ task.spawn(function()
 end)
 
 print("KOHLS ADMIN HOUSE X loaded. Press K to toggle GUI.")
-print("Kick: speed 0 → freeze → size nan → freeze me → create Tool at victim HRP → resize Handle to 7x7x7 → anchor Handle → wait 0.5s → thaw me (NO reset).")
+print("Kick: speed 0 → freeze → size nan → freeze me → create Tool at victim HRP → resize Handle to 7x7x7 → anchor → wait 0.5s → thaw me (NO SWORD).")
 print("/.(kickall – runs once, kicks all unprotected players with 0.8s delay between kicks.")
 print(".clr now works reliably every time.")
 print("Anti-Jail fixed – now checks both Name and DisplayName for jail models.")
