@@ -1,9 +1,9 @@
--- ===== VERSION 19: RAYFIELD NOTIFY/TOAST, FIXED INFO/STATS, PAD CONTROLS =====
-if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 19 then
+-- ===== VERSION 21: FIXED PlayerRemoving EVENT =====
+if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 21 then
     script:Destroy()
     return
 end
-_G.ADMIN_SCRIPT_VERSION = 19
+_G.ADMIN_SCRIPT_VERSION = 21
 
 -- === AUTO-EXEC ON REJOIN ===
 if _G.AUTO_EXEC_URL then
@@ -27,6 +27,10 @@ local Lighting = game:GetService("Lighting")
 local TeleportService = game:GetService("TeleportService")
 local MarketplaceService = game:GetService("MarketplaceService")
 
+-- === GAMEPASS IDs ===
+local GAMEPASS_PERM_ADMIN = 735344035
+local GAMEPASS_PERSONS_ADMIN = 1032786574
+
 -- === GLOBAL FLAGS ===
 local padMonitorRunning = true
 local suppressRe = false
@@ -36,7 +40,8 @@ local gbanTargets = {}
 local lastReTime = 0
 local antiFreezeActive = false
 local afkActive = false
-local autoClaimEnabled = true   -- toggle for pad auto-claim
+local autoClaimEnabled = true
+local padClaimerThread = nil
 
 -- === LOOP STATE ===
 local loopWSActive = false
@@ -57,7 +62,7 @@ local stats = {
 
 -- === ASSET IDs (icons) ===
 local ICONS = {
-    main = 1436097318,        -- Roblox Icon
+    main = 1436097318,
     loops = 1436097318,
     stats = 1436097318,
     info = 1436097318,
@@ -77,11 +82,11 @@ local function chatSystem(msg)
 end
 
 -- ========================================
--- === RAYFIELD UI (created early so window exists for notifications) ===
+-- === RAYFIELD UI (created early) ===
 -- ========================================
 local window = Rayfield:CreateWindow({
     name = "Admin Pad Claimer",
-    subtitle = "v19 - Rayfield UI",
+    subtitle = "v21 - Rayfield UI",
 })
 
 -- === NOTIFICATION WRAPPER using window:Notify ===
@@ -103,10 +108,22 @@ end
 -- === TOAST for join/leave ===
 local function toastJoin(player)
     pcall(function()
+        local gamepassText = ""
+        local success1, hasPerm = pcall(function()
+            return MarketplaceService:UserOwnsGamePassAsync(player.UserId, GAMEPASS_PERM_ADMIN)
+        end)
+        local success2, hasPersons = pcall(function()
+            return MarketplaceService:UserOwnsGamePassAsync(player.UserId, GAMEPASS_PERSONS_ADMIN)
+        end)
+        if success1 and hasPerm then
+            gamepassText = " [Perm Admin]"
+        elseif success2 and hasPersons then
+            gamepassText = " [Persons Admin]"
+        end
         window:Toast({
-            title = player.DisplayName,
+            title = player.DisplayName .. gamepassText,
             subtitle = player.Name .. " (" .. player.UserId .. ")",
-            avatar = player.UserId,  -- uses player's avatar thumbnail
+            avatar = player.UserId,
         })
     end)
 end
@@ -121,9 +138,19 @@ local function toastLeave(player)
     end)
 end
 
--- Listen to join/leave
+-- === Listen to join/leave (fixed event name) ===
 Players.PlayerAdded:Connect(toastJoin)
-Players.PlayerRemoved:Connect(toastLeave)
+Players.PlayerRemoving:Connect(toastLeave)   -- was PlayerRemoved, fixed to PlayerRemoving
+
+-- Also send toast for existing players on startup
+task.spawn(function()
+    task.wait(1)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            toastJoin(p)
+        end
+    end
+end)
 
 -- === IDENTIFY EXECUTOR ===
 local function identifyExecutor()
@@ -155,6 +182,28 @@ local function getPlayerFromPartial(partial)
     return nil
 end
 
+-- === CHECK GAMEPASS FOR PLAYER ===
+local function getGamepassInfo(player)
+    local info = ""
+    local success1, hasPerm = pcall(function()
+        return MarketplaceService:UserOwnsGamePassAsync(player.UserId, GAMEPASS_PERM_ADMIN)
+    end)
+    local success2, hasPersons = pcall(function()
+        return MarketplaceService:UserOwnsGamePassAsync(player.UserId, GAMEPASS_PERSONS_ADMIN)
+    end)
+    if success1 and hasPerm then
+        info = info .. " | Perm Admin: Yes"
+    else
+        info = info .. " | Perm Admin: No"
+    end
+    if success2 and hasPersons then
+        info = info .. " | Persons Admin: Yes"
+    else
+        info = info .. " | Persons Admin: No"
+    end
+    return info
+end
+
 -- === EQUIP BUILDING TOOLS ===
 local function equipBuildingTools()
     local char = LocalPlayer.Character
@@ -184,4 +233,1878 @@ local function getSyncAPI()
         notifyError("SyncAPI not found.")
         return nil
     end
-    return api:
+    return api:FindFirstChild("ServerEndpoint")
+end
+
+-- === LOOP FUNCTIONS ===
+local function startLoopWS(target)
+    loopWSActive = true
+    loopWSTarget = target
+    task.spawn(function()
+        while loopWSActive and monitorLoopActive do
+            local char = LocalPlayer.Character
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    if humanoid.WalkSpeed ~= target then
+                        humanoid.WalkSpeed = target
+                    end
+                end
+            end
+            task.wait(0.05)
+        end
+    end)
+end
+
+local function stopLoopWS()
+    loopWSActive = false
+end
+
+local function startLoopJP(target)
+    loopJPActive = true
+    loopJPTarget = target
+    task.spawn(function()
+        while loopJPActive and monitorLoopActive do
+            local char = LocalPlayer.Character
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    if humanoid.JumpPower ~= target then
+                        humanoid.JumpPower = target
+                    end
+                end
+            end
+            task.wait(0.05)
+        end
+    end)
+end
+
+local function stopLoopJP()
+    loopJPActive = false
+end
+
+local function startLoopGravity(target)
+    loopGravityActive = true
+    loopGravityTarget = target
+    task.spawn(function()
+        while loopGravityActive and monitorLoopActive do
+            local char = LocalPlayer.Character
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    if humanoid.Gravity ~= target then
+                        humanoid.Gravity = target
+                    end
+                end
+            end
+            task.wait(0.05)
+        end
+    end)
+end
+
+local function stopLoopGravity()
+    loopGravityActive = false
+end
+
+-- === KILLBRICK IMMUNITY LOOP ===
+local killbrickImmunityActive = false
+
+local function startKillbrickImmunity()
+    if killbrickImmunityActive then return end
+    killbrickImmunityActive = true
+    task.spawn(function()
+        while killbrickImmunityActive and monitorLoopActive do
+            for _, v in pairs(Workspace:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    local name = string.lower(v.Name)
+                    if string.find(name, "kill") or string.find(name, "lava") or string.find(name, "death") or string.find(name, "spike") then
+                        v.CanTouch = false
+                    end
+                end
+            end
+            task.wait(0.5)
+        end
+    end)
+end
+
+local function stopKillbrickImmunity()
+    killbrickImmunityActive = false
+end
+
+-- === ANTI-FREEZE LOOP ===
+local function startAntiFreeze()
+    if antiFreezeActive then return end
+    antiFreezeActive = true
+    task.spawn(function()
+        while antiFreezeActive and monitorLoopActive do
+            local char = LocalPlayer.Character
+            if char then
+                local rootPart = char:FindFirstChild("HumanoidRootPart")
+                if rootPart and rootPart.Anchored then
+                    chatSystem("thaw me")
+                end
+            end
+            task.wait(0.5)
+        end
+    end)
+end
+
+local function stopAntiFreeze()
+    antiFreezeActive = false
+end
+
+-- === CONTINUOUS TOUCH DISABLE ===
+task.spawn(function()
+    while monitorLoopActive do
+        local tabby = Workspace:FindFirstChild("Tabby")
+        if tabby then
+            local adminHouse = tabby:FindFirstChild("Admin_House")
+            if adminHouse then
+                local obby = adminHouse:FindFirstChild("Obby")
+                if obby then
+                    for _, child in ipairs(obby:GetChildren()) do
+                        if string.match(child.Name, "^Jump") then
+                            local ti = child:FindFirstChild("TouchInterest")
+                            if ti then ti:Destroy() end
+                            child.CanTouch = false
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.1)
+    end
+end)
+
+-- === .clr ===
+local clrRunning = false
+local clrStop = false
+local function clearAll()
+    if clrRunning then return end
+    clrRunning = true
+    clrStop = false
+    equipBuildingTools()
+    local endpoint = getSyncAPI()
+    if not endpoint then
+        notifyError(".clr: Building Tools endpoint not available.")
+        clrRunning = false
+        return
+    end
+    local targets = {"Part", "Truss", "Wedge", "CornerWedge"}
+    local instances = {}
+    for _, v in pairs(Workspace:GetDescendants()) do
+        if v:IsA("BasePart") then
+            local n = string.lower(v.Name)
+            for _, t in ipairs(targets) do
+                if n == string.lower(t) then
+                    table.insert(instances, v)
+                    break
+                end
+            end
+        end
+    end
+    if #instances == 0 then
+        notify(".clr", "No matching parts found.")
+        clrRunning = false
+        return
+    end
+    local total = 0
+    for i = 1, #instances, 5000 do
+        if clrStop then break end
+        local batch = {}
+        for j = i, math.min(i + 4999, #instances) do
+            table.insert(batch, instances[j])
+        end
+        pcall(function()
+            endpoint:InvokeServer("Remove", batch)
+        end)
+        total = total + #batch
+        task.wait(0.01)
+    end
+    notify(".clr", "Removed " .. total .. " parts.")
+    clrRunning = false
+end
+
+-- === .adminclr ===
+local function adminClear()
+    equipBuildingTools()
+    local endpoint = getSyncAPI()
+    if not endpoint then
+        notifyError(".adminclr: Building Tools endpoint not available.")
+        return
+    end
+    local targets = {"House", "Obby Box", "Obby", "Baseplate", "Grids", "Regen"}
+    local instances = {}
+    for _, v in pairs(Workspace:GetDescendants()) do
+        if v:IsA("Model") or v:IsA("BasePart") then
+            for _, t in ipairs(targets) do
+                if v.Name == t then
+                    table.insert(instances, v)
+                    break
+                end
+            end
+        end
+    end
+    if #instances == 0 then
+        notify(".adminclr", "No matching instances found.")
+        return
+    end
+    local total = 0
+    for i = 1, #instances, 5000 do
+        local batch = {}
+        for j = i, math.min(i + 4999, #instances) do
+            table.insert(batch, instances[j])
+        end
+        pcall(function()
+            endpoint:InvokeServer("Remove", batch)
+        end)
+        total = total + #batch
+        task.wait(0.01)
+    end
+    notify(".adminclr", "Removed " .. total .. " instances.")
+end
+
+-- === PAD CLAIMER ===
+local trackedPad = nil
+local padChildren = nil
+local clickDetector = nil
+
+local function initPadClaimer()
+    local terrain = Workspace:FindFirstChild("Terrain")
+    if not terrain then return false end
+    local gameFolder = terrain:FindFirstChild("_Game")
+    if not gameFolder then return false end
+    local adminFolder = gameFolder:FindFirstChild("Admin")
+    if not adminFolder then return false end
+    local pads = adminFolder:FindFirstChild("Pads")
+    if not pads then return false end
+    padChildren = pads:GetChildren()
+    if #padChildren < 9 then return false end
+    clickDetector = adminFolder:FindFirstChild("Regen") and adminFolder.Regen:FindFirstChild("ClickDetector")
+    return true
+end
+
+local function fireRegen()
+    if not clickDetector then return false end
+    clickDetector.MaxActivationDistance = 99999
+    pcall(function()
+        fireclickdetector(clickDetector)
+    end)
+    return true
+end
+
+local function getHRP()
+    local char = LocalPlayer.Character
+    if char then
+        return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart")
+    end
+    return nil
+end
+
+local function fireTouch(pad)
+    local head = pad:FindFirstChild("Head")
+    if not head then return false end
+    local hrp = getHRP()
+    if not hrp then return false end
+    pcall(function()
+        firetouchinterest(head, hrp, 0)
+        task.wait(0.1)
+        firetouchinterest(head, hrp, 1)
+    end)
+    return true
+end
+
+local function isDarkGreen(pad)
+    local head = pad:FindFirstChild("Head")
+    if head and head:IsA("BasePart") then
+        return head.BrickColor == BrickColor.new("Dark green")
+    end
+    return false
+end
+
+local function isBrightRed(pad)
+    local head = pad:FindFirstChild("Head")
+    if head and head:IsA("BasePart") then
+        return head.BrickColor == BrickColor.new("Bright red")
+    end
+    return false
+end
+
+local function findDarkGreen()
+    if not padChildren then return nil end
+    for _, pad in ipairs(padChildren) do
+        if isDarkGreen(pad) then return pad end
+    end
+    return nil
+end
+
+local function touchAndTrack()
+    local dark = findDarkGreen()
+    if dark then
+        fireTouch(dark)
+        task.wait(0.1)
+        if isBrightRed(dark) then
+            trackedPad = dark
+            return true
+        end
+    else
+        fireRegen()
+        task.wait(0.1)
+    end
+    return false
+end
+
+local function monitorTracked()
+    if not trackedPad or not trackedPad.Parent then
+        trackedPad = nil
+        return false
+    end
+    if isDarkGreen(trackedPad) then
+        fireTouch(trackedPad)
+        task.wait(0.1)
+        if isBrightRed(trackedPad) then
+            return true
+        else
+            trackedPad = nil
+            return false
+        end
+    elseif isBrightRed(trackedPad) then
+        return true
+    else
+        trackedPad = nil
+        return false
+    end
+end
+
+local function claimAllPads()
+    if not padChildren then initPadClaimer() end
+    if not padChildren then
+        notifyError("Pads not available.")
+        return
+    end
+    fireRegen()
+    task.wait(0.5)
+    local claimed = 0
+    for _, pad in ipairs(padChildren) do
+        if isDarkGreen(pad) then
+            if fireTouch(pad) then
+                claimed = claimed + 1
+                task.wait(0.1)
+            end
+        end
+    end
+    notify("Claim All", "Claimed " .. claimed .. " pads.", 3)
+end
+
+local function stopPadClaimer()
+    autoClaimEnabled = false
+    if padClaimerThread then
+        padClaimerThread = nil
+    end
+end
+
+local function startPadClaimer()
+    if not initPadClaimer() then
+        notifyError("Pad claimer not available.")
+        return
+    end
+    autoClaimEnabled = true
+    if padClaimerThread then
+        return
+    end
+    padClaimerThread = task.spawn(function()
+        while autoClaimEnabled and monitorLoopActive do
+            if trackedPad then
+                if not monitorTracked() then
+                    touchAndTrack()
+                end
+            else
+                touchAndTrack()
+            end
+            task.wait(0.01)
+        end
+        padClaimerThread = nil
+    end)
+end
+
+-- === EQUIP ADMIN TOOL ===
+local function equipAdminTool()
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    if bp then
+        local folder = bp:FindFirstChild(".adminclr")
+        if folder then
+            local tool = folder:FindFirstChildOfClass("Tool")
+            if tool then
+                pcall(function()
+                    tool.Parent = LocalPlayer.Character
+                end)
+            end
+        end
+    end
+end
+equipAdminTool()
+equipBuildingTools()
+
+-- === HELPER: getNil ===
+local function getNil(name, class)
+    for _, v in next, getnilinstances() do
+        if v.ClassName == class and v.Name == name then
+            return v
+        end
+    end
+    return nil
+end
+
+-- === .kick ===
+local function kickPlayer(targetName)
+    local target = getPlayerFromPartial(targetName)
+    if not target then
+        notifyError("Player not found.")
+        return
+    end
+    equipBuildingTools()
+    local endpoint = getSyncAPI()
+    if not endpoint then
+        notifyError("Building Tools not available.")
+        return
+    end
+
+    local victimChar = target.Character
+    if not victimChar then
+        notifyError("Victim has no character.")
+        return
+    end
+
+    local rootPart = victimChar:FindFirstChild("HumanoidRootPart")
+    if not rootPart then
+        rootPart = victimChar:FindFirstChildWhichIsA("BasePart")
+    end
+    if not rootPart then
+        notifyError("Victim has no BasePart.")
+        return
+    end
+    local rootPos = rootPart.Position
+
+    local rightHand = victimChar:FindFirstChild("RightHand")
+    if not rightHand then
+        rightHand = victimChar:FindFirstChild("Right Arm")
+    end
+    local rightPos = (rightHand and rightHand:IsA("BasePart")) and rightHand.Position or (rootPos + Vector3.new(2, 0, 0))
+
+    local victimName = target.Name
+
+    chatSystem("freeze " .. victimName)
+    chatSystem("blind " .. victimName)
+    chatSystem("size " .. victimName .. " nan")
+    chatSystem("freeze me")
+
+    for i = 1, 5 do
+        chatSystem("sword me")
+        task.wait(0.1)
+    end
+
+    local swords = {}
+    local char = LocalPlayer.Character
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+
+    local function collectFromContainer(container)
+        if not container then return end
+        for _, tool in ipairs(container:GetChildren()) do
+            if tool:IsA("Tool") and (string.find(tool.Name, "Sword") or string.find(tool.Name, "LinkedSword")) then
+                table.insert(swords, tool)
+            end
+        end
+    end
+
+    collectFromContainer(char)
+    collectFromContainer(backpack)
+
+    if #swords < 5 then
+        task.wait(0.2)
+        swords = {}
+        collectFromContainer(char)
+        collectFromContainer(backpack)
+    end
+
+    if #swords < 5 then
+        notifyError("Only found " .. #swords .. " swords, need 5.")
+        chatSystem("thaw me")
+        return
+    end
+
+    local positions = {
+        rootPos + Vector3.new(2, 0, 0),
+        rootPos + Vector3.new(-2, 0, 0),
+        rootPos + Vector3.new(0, 2, 0),
+        rootPos + Vector3.new(0, -2, 0),
+        rightPos + Vector3.new(0, 1, 0)
+    }
+
+    for i = 1, 5 do
+        local sword = swords[i]
+        if sword and sword:IsA("Tool") then
+            if sword.Parent == backpack then
+                pcall(function()
+                    sword.Parent = char
+                end)
+            end
+            pcall(function()
+                sword.Parent = workspace
+            end)
+            local handle = sword:FindFirstChild("Handle") or sword
+            if handle and handle:IsA("BasePart") then
+                local pos = positions[i]
+                local moveArgs = {
+                    "SyncMove",
+                    {
+                        {
+                            Part = handle,
+                            CFrame = CFrame.new(pos)
+                        },
+                        {
+                            Pivot = CFrame.new(pos),
+                            Model = sword
+                        }
+                    }
+                }
+                pcall(function()
+                    endpoint:InvokeServer(unpack(moveArgs))
+                end)
+            end
+            task.wait(0.05)
+        end
+    end
+
+    chatSystem("thaw me")
+    stats.playersKicked = stats.playersKicked + 1
+    notify("Kick", "Kicked " .. victimName .. " with 5 swords (4 root, 1 right).", 4)
+end
+
+-- === .unancall, .nocolall, .trollclr ===
+local function unanchorAll()
+    equipBuildingTools()
+    local endpoint = getSyncAPI()
+    if not endpoint then
+        notifyError("Building Tools not available.")
+        return
+    end
+    local targets = {"Part", "Truss", "Wedge", "CornerWedge"}
+    local parts = {}
+    for _, v in pairs(Workspace:GetDescendants()) do
+        if v:IsA("BasePart") then
+            local n = string.lower(v.Name)
+            for _, t in ipairs(targets) do
+                if n == string.lower(t) then
+                    table.insert(parts, v)
+                    break
+                end
+            end
+        end
+    end
+    if #parts == 0 then
+        notify(".unancall", "No matching parts found.")
+        return
+    end
+    for i = 1, #parts, 5000 do
+        local batch = {}
+        for j = i, math.min(i + 4999, #parts) do
+            table.insert(batch, {
+                Part = parts[j],
+                CFrame = parts[j].CFrame,
+                Anchored = false
+            })
+        end
+        local args = {"SyncAnchor", batch}
+        pcall(function()
+            endpoint:InvokeServer(unpack(args))
+        end)
+        task.wait(0.01)
+    end
+    notify(".unancall", "All matching parts unanchored.")
+end
+
+local function nocolAll()
+    equipBuildingTools()
+    local endpoint = getSyncAPI()
+    if not endpoint then
+        notifyError("Building Tools not available.")
+        return
+    end
+    local targets = {"Part", "Truss", "Wedge", "CornerWedge"}
+    local parts = {}
+    for _, v in pairs(Workspace:GetDescendants()) do
+        if v:IsA("BasePart") then
+            local n = string.lower(v.Name)
+            for _, t in ipairs(targets) do
+                if n == string.lower(t) then
+                    table.insert(parts, v)
+                    break
+                end
+            end
+        end
+    end
+    if #parts == 0 then
+        notify(".nocolall", "No matching parts found.")
+        return
+    end
+    for i = 1, #parts, 5000 do
+        local batch = {}
+        for j = i, math.min(i + 4999, #parts) do
+            table.insert(batch, {
+                Part = parts[j],
+                CanCollide = false
+            })
+        end
+        local args = {"SyncCollision", batch}
+        pcall(function()
+            endpoint:InvokeServer(unpack(args))
+        end)
+        task.wait(0.01)
+    end
+    notify(".nocolall", "All matching parts set to no collision.")
+end
+
+local function trollClr()
+    unanchorAll()
+    task.wait(0.5)
+    nocolAll()
+    notify(".trollclr", "Unanchored and no collision on all matching parts.")
+end
+
+-- === .destroy ===
+local function destroyScript()
+    chatSystem("Destroying script...")
+    monitorLoopActive = false
+    padMonitorRunning = false
+    _G.ADMIN_SCRIPT_VERSION = nil
+    script:Destroy()
+end
+
+-- === .rejoin ===
+local function rejoin()
+    local placeId = game.PlaceId
+    local privateId = game.PrivateServerId
+    if privateId ~= "" then
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(placeId, privateId, LocalPlayer)
+        end)
+    else
+        local jobId = game.JobId
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(placeId, jobId, LocalPlayer)
+        end)
+    end
+end
+
+-- === .testrj ===
+local function testRejoin()
+    _G.AUTO_EXEC_URL = "https://raw.githubusercontent.com/59k697hd2r-debug/hahhahayouareagoodguy/refs/heads/main/loosPo"
+    chatSystem("Rejoining and auto-executing loadstring...")
+    rejoin()
+end
+
+-- === ANTI-ALL SYSTEM ===
+local antiAllActive = false
+
+local function enableAntiAll(player)
+    player = player or LocalPlayer
+    addProtectedPlayer(player)
+    chatSystem("Anti-punish, anti-death, and anti-jail enabled for " .. player.Name)
+    notify("Anti-All", "All protections enabled for " .. player.Name, 3)
+end
+
+local function disableAntiAll(player)
+    player = player or LocalPlayer
+    removeProtectedPlayer(player)
+    chatSystem("All protections removed from " .. player.Name)
+    notify("Anti-All", "All protections disabled for " .. player.Name, 3)
+end
+
+-- === ANTI-PUNISH ===
+local function enableAntiPunish(player)
+    if not player then return end
+    addProtectedPlayer(player)
+    chatSystem("Anti-punish enabled for " .. player.Name)
+    notify("Anti-Punish", "Anti-punish enabled for " .. player.Name, 3)
+end
+
+local function disableAntiPunish(player)
+    if not player then return end
+    removeProtectedPlayer(player)
+    chatSystem("Anti-punish removed from " .. player.Name)
+    notify("Anti-Punish", "Anti-punish disabled for " .. player.Name, 3)
+end
+
+-- === ANTI-DEATH ===
+local function enableAntiDeath(player)
+    if not player then return end
+    addProtectedPlayer(player)
+    chatSystem("Anti-death enabled for " .. player.Name)
+    notify("Anti-Death", "Anti-death enabled for " .. player.Name, 3)
+end
+
+local function disableAntiDeath(player)
+    if not player then return end
+    removeProtectedPlayer(player)
+    chatSystem("Anti-death removed from " .. player.Name)
+    notify("Anti-Death", "Anti-death disabled for " .. player.Name, 3)
+end
+
+-- === ANTI-JAIL ===
+local function checkAndUnjail(player)
+    if not player then return end
+    local jailName = player.Name .. "'s jail"
+    local jailModel = Workspace:FindFirstChild(jailName)
+    if jailModel then
+        chatSystem("unjail " .. player.Name)
+        stats.playersJailed = stats.playersJailed + 1
+        return true
+    end
+    return false
+end
+
+local function addProtectedPlayer(player)
+    if not player then return end
+    protectedPlayers[player.Name] = true
+    stats.playersProtected = stats.playersProtected + 1
+    checkAndUnjail(player)
+end
+
+local function removeProtectedPlayer(player)
+    if not player then return end
+    protectedPlayers[player.Name] = nil
+end
+
+task.spawn(function()
+    while monitorLoopActive do
+        checkAndUnjail(LocalPlayer)
+        for name, _ in pairs(protectedPlayers) do
+            local p = Players:FindFirstChild(name)
+            if p then
+                checkAndUnjail(p)
+            end
+        end
+        task.wait(2)
+    end
+end)
+
+-- === .gearban ===
+local function monitorGear(player)
+    if not player then return end
+    local char = player.Character
+    local bp = player:FindFirstChild("Backpack")
+    local foundGear = false
+    if char then
+        for _, tool in ipairs(char:GetChildren()) do
+            if tool:IsA("Tool") then
+                foundGear = true
+                break
+            end
+        end
+    end
+    if not foundGear and bp then
+        for _, tool in ipairs(bp:GetChildren()) do
+            if tool:IsA("Tool") then
+                foundGear = true
+                break
+            end
+        end
+    end
+    if foundGear then
+        for _ = 1, 4 do
+            chatSystem("ungear " .. player.Name)
+            task.wait(0.05)
+        end
+    end
+end
+
+task.spawn(function()
+    while monitorLoopActive do
+        for _, name in ipairs(gbanTargets) do
+            local p = Players:FindFirstChild(name)
+            if p then
+                monitorGear(p)
+            end
+        end
+        task.wait(0.1)
+    end
+end)
+
+local function addGearbanTarget(player)
+    if not player then return end
+    if not table.find(gbanTargets, player.Name) then
+        table.insert(gbanTargets, player.Name)
+        stats.playersGearbanned = stats.playersGearbanned + 1
+        chatSystem("Now monitoring " .. player.Name .. " for gears.")
+    end
+end
+
+local function removeGearbanTarget(player)
+    if not player then return end
+    for i, name in ipairs(gbanTargets) do
+        if name == player.Name then
+            table.remove(gbanTargets, i)
+            chatSystem("Stopped monitoring " .. player.Name .. " for gears.")
+            break
+        end
+    end
+end
+
+-- === .gameinfo ===
+local function gameInfo()
+    local infoText = ""
+    local success, info = pcall(function()
+        return MarketplaceService:GetProductInfo(game.PlaceId)
+    end)
+    if success and info then
+        local placeName = info.Name or "Unknown"
+        local creatorName = info.Creator and info.Creator.Name or "Unknown"
+        local creatorType = info.Creator and info.Creator.CreatorType or "Unknown"
+        infoText = "Place: " .. placeName .. "\nCreator: " .. creatorName .. " (" .. tostring(creatorType) .. ")"
+    else
+        infoText = "Could not fetch product info."
+    end
+    infoText = infoText .. "\nGameId: " .. game.GameId .. "\nPlaceId: " .. game.PlaceId .. "\nCreatorId: " .. game.CreatorId .. "\nCreatorType: " .. tostring(game.CreatorType) .. "\nPrivateServerId: " .. game.PrivateServerId .. "\nPrivateServerOwnerId: " .. game.PrivateServerOwnerId
+    notify("Game Info", infoText, 8)
+end
+
+-- === .serverinfo ===
+local function serverInfo()
+    local placeId = game.PlaceId
+    local jobId = game.JobId
+    local playerCount = #Players:GetPlayers()
+    notify("Server Info", "PlaceId: " .. placeId .. "\nJobId: " .. jobId .. "\nPlayers: " .. playerCount, 5)
+end
+
+-- === .porta ===
+local function porta(targetName)
+    local target = getPlayerFromPartial(targetName)
+    if not target then
+        notifyError("Player not found.")
+        return
+    end
+    local victimChar = target.Character
+    if not victimChar then
+        notifyError("Victim has no character.")
+        return
+    end
+
+    chatSystem("gear me portable")
+    local maxWait = 5
+    local waited = 0
+    local portable = nil
+    while waited < maxWait do
+        local bp = LocalPlayer:FindFirstChild("Backpack")
+        if bp then
+            portable = bp:FindFirstChild("PortableJustice")
+            if portable then break end
+        end
+        task.wait(0.2)
+        waited = waited + 0.2
+    end
+    if not portable then
+        notifyError("PortableJustice tool not found after 'gear me portable'.")
+        return
+    end
+    local mouseClick = portable:FindFirstChild("MouseClick")
+    if not mouseClick then
+        notifyError("MouseClick not found in PortableJustice.")
+        return
+    end
+    local args = { victimChar }
+    pcall(function()
+        mouseClick:FireServer(unpack(args))
+    end)
+    stats.playersPortaUsed = stats.playersPortaUsed + 1
+    chatSystem("Porta used on " .. target.Name)
+end
+
+-- === .afk ===
+local function goAfk(targetName)
+    local target = getPlayerFromPartial(targetName)
+    if not target then
+        notifyError("Player not found.")
+        return
+    end
+    if target == LocalPlayer then
+        if antiFreezeActive then
+            stopAntiFreeze()
+            notify("AFK", "Anti-freeze disabled for you.", 3)
+        end
+        afkActive = true
+    else
+        chatSystem("freeze " .. target.Name)
+        removeProtectedPlayer(target)
+    end
+    chatSystem("name " .. target.Name .. " afk")
+    notify("AFK", target.Name .. " is now AFK.", 3)
+end
+
+-- === .unafk ===
+local function unAfk(targetName)
+    local target = getPlayerFromPartial(targetName)
+    if not target then
+        notifyError("Player not found.")
+        return
+    end
+    if target == LocalPlayer then
+        afkActive = false
+        if not antiFreezeActive then
+            startAntiFreeze()
+            notify("UNAFK", "Anti-freeze re-enabled for you.", 3)
+        end
+    else
+        chatSystem("thaw " .. target.Name)
+    end
+    chatSystem("unname " .. target.Name)
+    notify("UNAFK", target.Name .. " is no longer AFK.", 3)
+end
+
+-- === SUPPRESS "re" ON SELF-RESET ===
+local function sendResetAndSuppress(playerName)
+    suppressRe = true
+    chatSystem("reset " .. playerName)
+    task.wait(0.5)
+    suppressRe = false
+end
+
+-- === PRINT COMMANDS ===
+local function printCommands()
+    local cmds = [[
+.clr .adminclr .getinfo .antiall .antipunish .antideath .antijail
+.unantiall .unantipunish .unantideath .unantijail
+.kick .unancall .nocolall .trollclr
+.destroy .rejoin .testrj
+.gearban (.gban) .ungearban (.ungban)
+.gameinfo .serverinfo .porta
+.loopws .loopjp .loopgravity
+.afk .unafk
+]]
+    print(cmds)
+    notify("Commands", "Check console (F9) for list.", 3)
+end
+
+-- ========================================
+-- === RAYFIELD UI CREATION ===
+-- ========================================
+
+-- === MAIN TAB ===
+local mainTab = window:CreateTab({
+    name = "Main",
+    icon = ICONS.main,
+})
+
+mainTab:CreateInput({
+    name = "Kick Player",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            task.spawn(function()
+                kickPlayer(text)
+            end)
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Gearban Player",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            local target = getPlayerFromPartial(text)
+            if target then
+                addGearbanTarget(target)
+                notify("Gearban", "Now monitoring " .. target.Name .. " for gears.", 3)
+            else
+                notifyError("Player not found.")
+            end
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Ungearban Player",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            local target = getPlayerFromPartial(text)
+            if target then
+                removeGearbanTarget(target)
+                notify("Ungearban", "Stopped monitoring " .. target.Name .. ".", 3)
+            else
+                notifyError("Player not found.")
+            end
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Porta Player",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            task.spawn(function()
+                porta(text)
+            end)
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Anti-Jail Player",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            local target = getPlayerFromPartial(text)
+            if target then
+                addProtectedPlayer(target)
+                notify("Anti-Jail", "Anti-jail enabled for " .. target.Name, 3)
+            else
+                notifyError("Player not found.")
+            end
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Remove Anti-Jail",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            local target = getPlayerFromPartial(text)
+            if target then
+                removeProtectedPlayer(target)
+                notify("Anti-Jail Removed", "Anti-jail removed for " .. target.Name, 3)
+            else
+                notifyError("Player not found.")
+            end
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Anti-Punish (Player)",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            local target = getPlayerFromPartial(text)
+            if target then
+                enableAntiPunish(target)
+            else
+                notifyError("Player not found.")
+            end
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Remove Anti-Punish",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            local target = getPlayerFromPartial(text)
+            if target then
+                disableAntiPunish(target)
+            else
+                notifyError("Player not found.")
+            end
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Anti-Death (Player)",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            local target = getPlayerFromPartial(text)
+            if target then
+                enableAntiDeath(target)
+            else
+                notifyError("Player not found.")
+            end
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Remove Anti-Death",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            local target = getPlayerFromPartial(text)
+            if target then
+                disableAntiDeath(target)
+            else
+                notifyError("Player not found.")
+            end
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Anti-All (Player)",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            local target = getPlayerFromPartial(text)
+            if target then
+                enableAntiAll(target)
+            else
+                notifyError("Player not found.")
+            end
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Remove Anti-All (Player)",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            local target = getPlayerFromPartial(text)
+            if target then
+                disableAntiAll(target)
+            else
+                notifyError("Player not found.")
+            end
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Get Player Info",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            local target = getPlayerFromPartial(text)
+            if target then
+                local gamepassStr = getGamepassInfo(target)
+                local info = "Name: " .. target.Name .. " | Display: " .. target.DisplayName .. " | UserId: " .. target.UserId .. gamepassStr
+                notify("Player Info", info, 5)
+            else
+                notifyError("Player not found.")
+            end
+        end
+    end,
+})
+
+-- Self toggles
+mainTab:CreateToggle({
+    name = "Anti-All (Self)",
+    callback = function(value)
+        if value then
+            enableAntiAll(LocalPlayer)
+        else
+            disableAntiAll(LocalPlayer)
+        end
+    end,
+})
+
+mainTab:CreateToggle({
+    name = "Anti-Freeze (Self)",
+    callback = function(value)
+        if value then
+            startAntiFreeze()
+            notify("Anti-Freeze", "Enabled. Will auto-thaw when anchored.", 3)
+        else
+            stopAntiFreeze()
+            notify("Anti-Freeze", "Disabled.", 3)
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = ".afk (Player)",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            task.spawn(function()
+                goAfk(text)
+            end)
+        else
+            notifyError("Enter a player name.")
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = ".unafk (Player)",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            task.spawn(function()
+                unAfk(text)
+            end)
+        else
+            notifyError("Enter a player name.")
+        end
+    end,
+})
+
+-- === LOOPS TAB ===
+local loopsTab = window:CreateTab({
+    name = "Loops",
+    icon = ICONS.loops,
+})
+
+loopsTab:CreateInput({
+    name = "Loop WalkSpeed",
+    placeholder = "Enter speed value (empty to stop)",
+    callback = function(text)
+        local num = tonumber(text)
+        if num then
+            if loopWSActive then
+                stopLoopWS()
+            end
+            startLoopWS(num)
+            notify("Loop WS", "WalkSpeed loop started at " .. num, 3)
+        else
+            if loopWSActive then
+                stopLoopWS()
+                notify("Loop WS", "WalkSpeed loop stopped.", 3)
+            else
+                notifyError("Invalid number. Enter a value to start, or empty to stop.")
+            end
+        end
+    end,
+})
+
+loopsTab:CreateInput({
+    name = "Loop JumpPower",
+    placeholder = "Enter jump power value (empty to stop)",
+    callback = function(text)
+        local num = tonumber(text)
+        if num then
+            if loopJPActive then
+                stopLoopJP()
+            end
+            startLoopJP(num)
+            notify("Loop JP", "JumpPower loop started at " .. num, 3)
+        else
+            if loopJPActive then
+                stopLoopJP()
+                notify("Loop JP", "JumpPower loop stopped.", 3)
+            else
+                notifyError("Invalid number. Enter a value to start, or empty to stop.")
+            end
+        end
+    end,
+})
+
+loopsTab:CreateInput({
+    name = "Loop Gravity",
+    placeholder = "Enter gravity value (empty to stop)",
+    callback = function(text)
+        local num = tonumber(text)
+        if num then
+            if loopGravityActive then
+                stopLoopGravity()
+            end
+            startLoopGravity(num)
+            notify("Loop Gravity", "Gravity loop started at " .. num, 3)
+        else
+            if loopGravityActive then
+                stopLoopGravity()
+                notify("Loop Gravity", "Gravity loop stopped.", 3)
+            else
+                notifyError("Invalid number. Enter a value to start, or empty to stop.")
+            end
+        end
+    end,
+})
+
+-- === STATS TAB ===
+local statsTab = window:CreateTab({
+    name = "Stats",
+    icon = ICONS.stats,
+})
+
+local statsGroup = statsTab:CreateGroup({
+    name = "Statistics",
+})
+
+local kickStat = statsGroup:CreateStat({
+    name = "Players Kicked",
+    value = 0,
+})
+
+local gearbanStat = statsGroup:CreateStat({
+    name = "Players Gearbanned",
+    value = 0,
+})
+
+local portaStat = statsGroup:CreateStat({
+    name = "Porta Used",
+    value = 0,
+})
+
+local jailStat = statsGroup:CreateStat({
+    name = "Players Jailed",
+    value = 0,
+})
+
+local protectedStat = statsGroup:CreateStat({
+    name = "Players Protected",
+    value = 0,
+})
+
+-- === INFO TAB ===
+local infoTab = window:CreateTab({
+    name = "Info",
+    icon = ICONS.info,
+})
+
+local infoGroup = infoTab:CreateGroup({
+    name = "Server Information",
+})
+
+local placeNameStat = infoGroup:CreateStat({
+    name = "Place Name",
+    value = "Loading...",
+})
+
+local creatorNameStat = infoGroup:CreateStat({
+    name = "Creator",
+    value = "Loading...",
+})
+
+local creatorTypeStat = infoGroup:CreateStat({
+    name = "Creator Type",
+    value = "Loading...",
+})
+
+local gameIdStat = infoGroup:CreateStat({
+    name = "Game ID",
+    value = game.GameId,
+})
+
+local placeIdStat = infoGroup:CreateStat({
+    name = "Place ID",
+    value = tostring(game.PlaceId),
+})
+
+local jobIdStat = infoGroup:CreateStat({
+    name = "Job ID",
+    value = game.JobId,
+})
+
+local playersStat = infoGroup:CreateStat({
+    name = "Players",
+    value = tostring(#Players:GetPlayers()),
+})
+
+infoGroup:CreateButton({
+    name = "Refresh Info",
+    callback = function()
+        task.spawn(function()
+            local success, info = pcall(function()
+                return MarketplaceService:GetProductInfo(game.PlaceId)
+            end)
+            if success and info then
+                placeNameStat:Set(info.Name or "Unknown")
+                local creatorName = info.Creator and info.Creator.Name or "Unknown"
+                creatorNameStat:Set(creatorName)
+                local creatorType = info.Creator and info.Creator.CreatorType or "Unknown"
+                creatorTypeStat:Set(tostring(creatorType))
+            else
+                placeNameStat:Set("Could not fetch")
+                creatorNameStat:Set("Could not fetch")
+                creatorTypeStat:Set("Could not fetch")
+            end
+        end)
+    end,
+})
+
+-- === MISC TAB ===
+local miscTab = window:CreateTab({
+    name = "Misc",
+    icon = ICONS.misc,
+})
+
+miscTab:CreateToggle({
+    name = "Killbrick Immunity",
+    callback = function(value)
+        if value then
+            startKillbrickImmunity()
+            notify("Killbrick Immunity", "Enabled. Killbrick parts will be disabled.", 3)
+        else
+            stopKillbrickImmunity()
+            notify("Killbrick Immunity", "Disabled.", 3)
+        end
+    end,
+})
+
+local padGroup = miscTab:CreateGroup({
+    name = "Admin Pad Controls",
+})
+
+padGroup:CreateButton({
+    name = "Regen Pads",
+    callback = function()
+        if initPadClaimer() then
+            fireRegen()
+            notify("Regen", "Admin pads regenerated.", 3)
+        else
+            notifyError("Pad claimer not available.")
+        end
+    end,
+})
+
+padGroup:CreateToggle({
+    name = "Auto Claim Pads",
+    value = true,
+    callback = function(value)
+        if value then
+            startPadClaimer()
+            notify("Auto Claim", "Auto-claim enabled.", 3)
+        else
+            stopPadClaimer()
+            notify("Auto Claim", "Auto-claim disabled.", 3)
+        end
+    end,
+})
+
+padGroup:CreateButton({
+    name = "Claim All Pads",
+    callback = function()
+        claimAllPads()
+    end,
+})
+
+local cmdGroup = miscTab:CreateGroup({
+    name = "Commands",
+})
+
+cmdGroup:CreateButton({
+    name = "Show Commands",
+    callback = function()
+        printCommands()
+    end,
+})
+
+cmdGroup:CreateButton({
+    name = ".clr",
+    callback = function()
+        task.spawn(clearAll)
+    end,
+})
+
+cmdGroup:CreateButton({
+    name = ".adminclr",
+    callback = function()
+        task.spawn(adminClear)
+    end,
+})
+
+cmdGroup:CreateButton({
+    name = ".unancall",
+    callback = function()
+        task.spawn(unanchorAll)
+    end,
+})
+
+cmdGroup:CreateButton({
+    name = ".nocolall",
+    callback = function()
+        task.spawn(nocolAll)
+    end,
+})
+
+cmdGroup:CreateButton({
+    name = ".trollclr",
+    callback = function()
+        task.spawn(trollClr)
+    end,
+})
+
+cmdGroup:CreateButton({
+    name = ".destroy (self-destruct)",
+    callback = function()
+        task.spawn(destroyScript)
+    end,
+})
+
+cmdGroup:CreateButton({
+    name = ".rejoin",
+    callback = function()
+        task.spawn(rejoin)
+    end,
+})
+
+cmdGroup:CreateButton({
+    name = ".testrj (rejoin + loadstring)",
+    callback = function()
+        task.spawn(testRejoin)
+    end,
+})
+
+-- === UPDATE STATS AND INFO PERIODICALLY ===
+task.spawn(function()
+    while monitorLoopActive do
+        kickStat:Set(stats.playersKicked)
+        gearbanStat:Set(stats.playersGearbanned)
+        portaStat:Set(stats.playersPortaUsed)
+        jailStat:Set(stats.playersJailed)
+        protectedStat:Set(stats.playersProtected)
+        playersStat:Set(tostring(#Players:GetPlayers()))
+        task.wait(1)
+    end
+end)
+
+-- === FETCH PLACE INFO ON STARTUP (with retry) ===
+task.spawn(function()
+    local retries = 0
+    while retries < 5 do
+        local success, info = pcall(function()
+            return MarketplaceService:GetProductInfo(game.PlaceId)
+        end)
+        if success and info then
+            placeNameStat:Set(info.Name or "Unknown")
+            local creatorName = info.Creator and info.Creator.Name or "Unknown"
+            creatorNameStat:Set(creatorName)
+            local creatorType = info.Creator and info.Creator.CreatorType or "Unknown"
+            creatorTypeStat:Set(tostring(creatorType))
+            break
+        else
+            retries = retries + 1
+            task.wait(1)
+        end
+    end
+    if retries == 5 then
+        placeNameStat:Set("Could not fetch")
+        creatorNameStat:Set("Could not fetch")
+        creatorTypeStat:Set("Could not fetch")
+    end
+end)
+
+-- === START PAD CLAIMER BY DEFAULT ===
+task.spawn(function()
+    task.wait(2)
+    startPadClaimer()
+end)
+
+-- === CHAT COMMAND HOOK ===
+local old
+old = hookmetamethod(game, "__namecall", function(self, ...)
+    local args = {...}
+    if self == ChatEvent and getnamecallmethod() == "FireServer" and typeof(args[1]) == "string" then
+        local msg = string.lower(args[1])
+        local parts = string.split(msg, " ")
+        local cmd = parts[1]
+
+        if cmd == ".clr" then
+            task.spawn(clearAll)
+            return nil
+        elseif cmd == ".adminclr" then
+            task.spawn(adminClear)
+            return nil
+        elseif cmd == ".getinfo" then
+            if parts[2] then
+                local target = getPlayerFromPartial(parts[2])
+                if target then
+                    local gamepassStr = getGamepassInfo(target)
+                    local info = "Name: " .. target.Name .. " | Display: " .. target.DisplayName .. " | UserId: " .. target.UserId .. gamepassStr
+                    notify("Player Info", info, 5)
+                else
+                    notify("Player Info", "Player not found.", 3)
+                end
+            else
+                notify("Player Info", "Usage: .getinfo <partial name>", 3)
+            end
+            return nil
+        elseif cmd == ".antiall" then
+            if parts[2] then
+                local target = getPlayerFromPartial(parts[2])
+                if target then
+                    sendResetAndSuppress(target.Name)
+                    enableAntiAll(target)
+                else
+                    chatSystem("Player not found.")
+                end
+            else
+                chatSystem("Usage: .antiall <partial name>")
+            end
+            return nil
+        elseif cmd == ".antipunish" then
+            if parts[2] then
+                local target = getPlayerFromPartial(parts[2])
+                if target then
+                    enableAntiPunish(target)
+                else
+                    chatSystem("Player not found.")
+                end
+            else
+                chatSystem("Usage: .antipunish <partial name>")
+            end
+            return nil
+        elseif cmd == ".antideath" then
+            if parts[2] then
+                local target = getPlayerFromPartial(parts[2])
+                if target then
+                    enableAntiDeath(target)
+                else
+                    chatSystem("Player not found.")
+                end
+            else
+                chatSystem("Usage: .antideath <partial name>")
+            end
+            return nil
+        elseif cmd == ".antijail" then
+            if parts[2] then
+                local target = getPlayerFromPartial(parts[2])
+                if target then
+                    addProtectedPlayer(target)
+                    chatSystem("Anti-jail enabled for " .. target.Name)
+                else
+                    chatSystem("Player not found.")
+                end
+            else
+                chatSystem("Usage: .antijail <partial name>")
+            end
+            return nil
+        elseif cmd == ".unantiall" then
+            if parts[2] then
+                local target = getPlayerFromPartial(parts[2])
+                if target then
+                    disableAntiAll(target)
+                else
+                    chatSystem("Player not found.")
+                end
+            else
+                chatSystem("Usage: .unantiall <partial name>")
+            end
+            return nil
+        elseif cmd == ".unantipunish" then
+            if parts[2] then
+                local target = getPlayerFromPartial(parts[2])
+                if target then
+                    disableAntiPunish(target)
+                else
+                    chatSystem("Player not found.")
+                end
+            else
+                chatSystem("Usage: .unantipunish <partial name>")
+            end
+            return nil
+        elseif cmd == ".unantideath" then
+            if parts[2] then
+                local target = getPlayerFromPartial(parts[2])
+                if target then
+                    disableAntiDeath(target)
+                else
+                    chatSystem("Player not found.")
+                end
+            else
+                chatSystem("Usage: .unantideath <partial name>")
+            end
+            return nil
+        elseif cmd == ".unantijail" then
+            if parts[2] then
+                local target = getPlayerFromPartial(parts[2])
+                if target then
+                    removeProtectedPlayer(target)
+                    chatSystem("Anti-jail removed from " .. target.Name)
+                else
+                    chatSystem("Player not found.")
+                end
+            else
+                chatSystem("Usage: .unantijail <partial name>")
+            end
+            return nil
+        elseif cmd == ".kick" then
+            if parts[2] then
+                task.spawn(function()
+                    kickPlayer(parts[2])
+                end)
+            else
+                chatSystem("Usage: .kick <partial name>")
+            end
+            return nil
+        elseif cmd == ".unancall" then
+            task.spawn(unanchorAll)
+            return nil
+        elseif cmd == ".nocolall" then
+            task.spawn(nocolAll)
+            return nil
+        elseif cmd == ".trollclr" then
+            task.spawn(trollClr)
+            return nil
+        elseif cmd == ".destroy" then
+            task.spawn(destroyScript)
+            return nil
+        elseif cmd == ".rejoin" then
+            task.spawn(rejoin)
+            return nil
+        elseif cmd == ".testrj" then
+            task.spawn(testRejoin)
+            return nil
+        elseif cmd == ".gearban" or cmd == ".gban" then
+            if parts[2] then
+                local target = getPlayerFromPartial(parts[2])
+                if target then
+                    addGearbanTarget(target)
+                else
+                    chatSystem("Player not found.")
+                end
+            else
+                chatSystem("Usage: .gearban <partial name>")
+            end
+            return nil
+        elseif cmd == ".ungearban" or cmd == ".ungban" then
+            if parts[2] then
+                local target = getPlayerFromPartial(parts[2])
+                if target then
+                    removeGearbanTarget(target)
+                else
+                    chatSystem("Player not found.")
+                end
+            else
+                chatSystem("Usage: .ungearban <partial name>")
+            end
+            return nil
+        elseif cmd == ".gameinfo" then
+            task.spawn(gameInfo)
+            return nil
+        elseif cmd == ".serverinfo" then
+            task.spawn(serverInfo)
+            return nil
+        elseif cmd == ".porta" then
+            if parts[2] then
+                task.spawn(function()
+                    porta(parts[2])
+                end)
+            else
+                chatSystem("Usage: .porta <partial name>")
+            end
+            return nil
+        elseif cmd == ".loopws" then
+            if parts[2] then
+                local num = tonumber(parts[2])
+                if num then
+                    if loopWSActive then
+                        stopLoopWS()
+                    end
+                    startLoopWS(num)
+                    chatSystem("WalkSpeed loop started at " .. num)
+                else
+                    chatSystem("Invalid number. Usage: .loopws <number>")
+                end
+            else
+                if loopWSActive then
+                    stopLoopWS()
+                    chatSystem("WalkSpeed loop stopped.")
+                else
+                    chatSystem("WalkSpeed loop not active. Usage: .loopws <number>")
+                end
+            end
+            return nil
+        elseif cmd == ".loopjp" then
+            if parts[2] then
+                local num = tonumber(parts[2])
+                if num then
+                    if loopJPActive then
+                        stopLoopJP()
+                    end
+                    startLoopJP(num)
+                    chatSystem("JumpPower loop started at " .. num)
+                else
+                    chatSystem("Invalid number. Usage: .loopjp <number>")
+                end
+            else
+                if loopJPActive then
+                    stopLoopJP()
+                    chatSystem("JumpPower loop stopped.")
+                else
+                    chatSystem("JumpPower loop not active. Usage: .loopjp <number>")
+                end
+            end
+            return nil
+        elseif cmd == ".loopgravity" then
+            if parts[2] then
+                local num = tonumber(parts[2])
+                if num then
+                    if loopGravityActive then
+                        stopLoopGravity()
+                    end
+                    startLoopGravity(num)
+                    chatSystem("Gravity loop started at " .. num)
+                else
+                    chatSystem("Invalid number. Usage: .loopgravity <number>")
+                end
+            else
+                if loopGravityActive then
+                    stopLoopGravity()
+                    chatSystem("Gravity loop stopped.")
+                else
+                    chatSystem("Gravity loop not active. Usage: .loopgravity <number>")
+                end
+            end
+            return nil
+        elseif cmd == ".afk" then
+            if parts[2] then
+                task.spawn(function()
+                    goAfk(parts[2])
+                end)
+            else
+                chatSystem("Usage: .afk <player name>")
+            end
+            return nil
+        elseif cmd == ".unafk" then
+            if parts[2] then
+                task.spawn(function()
+                    unAfk(parts[2])
+                end)
+            else
+                chatSystem("Usage: .unafk <player name>")
+            end
+            return nil
+        end
+    end
+    return old and old(self, ...)
+end)
+
+-- === CHARACTER MONITOR ===
+local wasAlive = true
+local debounce = false
+task.spawn(function()
+    while monitorLoopActive do
+        local char = LocalPlayer.Character
+        local isDead = false
+        local isPunished = false
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health <= 0 then
+                isDead = true
+            end
+            if char.Parent == Lighting then
+                isPunished = true
+            end
+        end
+        local isAlive = (char ~= nil and char.Parent == Workspace and not isDead and not isPunished)
+        if wasAlive and not isAlive then
+            local now = tick()
+            if not debounce and not suppressRe and (now - lastReTime > 1) then
+                chatSystem("re")
+                debounce = true
+                lastReTime = now
+                task.wait(0.4)
+                debounce = false
+            end
+        end
+        wasAlive = isAlive
+        task.wait(0.05)
+    end
+end)
+
+-- === STARTUP ===
+if ChatEvent then
+    ChatEvent:FireServer("startergive self", "System")
+end
+
+local executor = identifyExecutor()
+notify("Executor", "Running on: " .. executor, 4)
+
+local displayName = LocalPlayer.DisplayName or LocalPlayer.Name
+notify("Welcome", "Welcome " .. displayName .. "!", 4)
+notify("Admin Pad Claimer v21", "Type .controls for command list or use UI.", 4)
