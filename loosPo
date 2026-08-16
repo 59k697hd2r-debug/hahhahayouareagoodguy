@@ -1,9 +1,9 @@
--- ===== VERSION 14: LOOPWS, LOOPJP, LOOPGRAVITY, SERVERINFO WITH JOBID =====
-if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 14 then
+-- ===== VERSION 15: RAYFIELD UI INTEGRATION =====
+if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 15 then
     script:Destroy()
     return
 end
-_G.ADMIN_SCRIPT_VERSION = 14
+_G.ADMIN_SCRIPT_VERSION = 15
 
 -- === AUTO-EXEC ON REJOIN ===
 if _G.AUTO_EXEC_URL then
@@ -13,6 +13,9 @@ if _G.AUTO_EXEC_URL then
         loadstring(game:HttpGet(url))()
     end)
 end
+
+-- === LOAD RAYFIELD ===
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -39,6 +42,15 @@ local loopWSTarget = 16
 local loopJPTarget = 50
 local loopGravityTarget = 196.2
 
+-- === STATS ===
+local stats = {
+    playersKicked = 0,
+    playersGearbanned = 0,
+    playersPortaUsed = 0,
+    playersJailed = 0,
+    playersProtected = 0,
+}
+
 -- === CHAT HELPERS ===
 local ChatEvent = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
 if ChatEvent then
@@ -51,11 +63,20 @@ local function chatSystem(msg)
     end
 end
 
-local function notify(title, text, duration)
-    duration = duration or 3
-    pcall(function()
-        StarterGui:SetCore("SendNotification", { Title = title, Text = text, Duration = duration })
-    end)
+-- === RAYFIELD NOTIFICATION WRAPPER ===
+local function notify(title, content, duration)
+    duration = duration or 5
+    if Rayfield and Rayfield:Notify then
+        Rayfield:Notify({
+            Title = title,
+            Content = content,
+            Duration = duration,
+        })
+    else
+        pcall(function()
+            StarterGui:SetCore("SendNotification", { Title = title, Text = content, Duration = duration })
+        end)
+    end
 end
 
 local function notifyError(msg)
@@ -422,35 +443,6 @@ if terrain then
                             task.wait(0.01)
                         end
                     end)
-
-                    -- GUI Regen button
-                    task.spawn(function()
-                        local sg = Instance.new("ScreenGui")
-                        sg.Name = "PadClaimerGUI"
-                        sg.ResetOnSpawn = false
-                        sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
-                        local frame = Instance.new("Frame")
-                        frame.Size = UDim2.new(0, 200, 0, 100)
-                        frame.Position = UDim2.new(0, 20, 0, 20)
-                        frame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-                        frame.BorderSizePixel = 0
-                        frame.Parent = sg
-                        local drag = Instance.new("UIDragDetector")
-                        drag.Parent = frame
-                        local btn = Instance.new("TextButton")
-                        btn.Size = UDim2.new(1, -10, 1, -10)
-                        btn.Position = UDim2.new(0, 5, 0, 5)
-                        btn.Text = "Regen"
-                        btn.BackgroundColor3 = Color3.new(0, 0.5, 0)
-                        btn.TextColor3 = Color3.new(1, 1, 1)
-                        btn.Parent = frame
-                        btn.MouseButton1Click:Connect(function()
-                            if clickDetector then
-                                fireRegen()
-                            end
-                        end)
-                        _G.ADMIN_GUI = sg
-                    end)
                 end
             end
         end
@@ -485,7 +477,7 @@ local function getNil(name, class)
     return nil
 end
 
--- === .kick: freeze victim, blind, size, freeze me, 5 swords (4 root, 1 right), thaw me ===
+-- === .kick ===
 local function kickPlayer(targetName)
     local target = getPlayerFromPartial(targetName)
     if not target then
@@ -505,7 +497,6 @@ local function kickPlayer(targetName)
         return
     end
 
-    -- Get positions: root and right hand
     local rootPart = victimChar:FindFirstChild("HumanoidRootPart")
     if not rootPart then
         rootPart = victimChar:FindFirstChildWhichIsA("BasePart")
@@ -524,21 +515,16 @@ local function kickPlayer(targetName)
 
     local victimName = target.Name
 
-    -- Send freeze victim, blind victim, size victim nan
     chatSystem("freeze " .. victimName)
     chatSystem("blind " .. victimName)
     chatSystem("size " .. victimName .. " nan")
-
-    -- Freeze me
     chatSystem("freeze me")
 
-    -- Request 5 swords quickly
     for i = 1, 5 do
         chatSystem("sword me")
         task.wait(0.1)
     end
 
-    -- Collect swords from character and backpack
     local swords = {}
     local char = LocalPlayer.Character
     local backpack = LocalPlayer:FindFirstChild("Backpack")
@@ -555,7 +541,6 @@ local function kickPlayer(targetName)
     collectFromContainer(char)
     collectFromContainer(backpack)
 
-    -- Retry once if not enough
     if #swords < 5 then
         task.wait(0.2)
         swords = {}
@@ -569,7 +554,6 @@ local function kickPlayer(targetName)
         return
     end
 
-    -- Positions: 4 at root (spread around), 1 at right hand
     local positions = {
         rootPos + Vector3.new(2, 0, 0),
         rootPos + Vector3.new(-2, 0, 0),
@@ -583,17 +567,14 @@ local function kickPlayer(targetName)
         if not sword or not sword:IsA("Tool") then
             continue
         end
-        -- Equip: move to character if in backpack
         if sword.Parent == backpack then
             pcall(function()
                 sword.Parent = char
             end)
         end
-        -- Reparent to workspace
         pcall(function()
             sword.Parent = workspace
         end)
-        -- Move using SyncMove
         local handle = sword:FindFirstChild("Handle") or sword
         if handle and handle:IsA("BasePart") then
             local pos = positions[i]
@@ -617,9 +598,8 @@ local function kickPlayer(targetName)
         task.wait(0.05)
     end
 
-    -- Thaw me
     chatSystem("thaw me")
-
+    stats.playersKicked = stats.playersKicked + 1
     notify("Kick", "Kicked " .. victimName .. " with 5 swords (4 root, 1 right).", 4)
 end
 
@@ -719,10 +699,6 @@ local function destroyScript()
     chatSystem("Destroying script...")
     monitorLoopActive = false
     padMonitorRunning = false
-    if _G.ADMIN_GUI then
-        pcall(function() _G.ADMIN_GUI:Destroy() end)
-        _G.ADMIN_GUI = nil
-    end
     _G.ADMIN_SCRIPT_VERSION = nil
     script:Destroy()
 end
@@ -750,13 +726,14 @@ local function testRejoin()
     rejoin()
 end
 
--- === ANTI-JAIL (lowercase 'j') ===
+-- === ANTI-JAIL ===
 local function checkAndUnjail(player)
     if not player then return end
     local jailName = player.Name .. "'s jail"
     local jailModel = Workspace:FindFirstChild(jailName)
     if jailModel then
         chatSystem("unjail " .. player.Name)
+        stats.playersJailed = stats.playersJailed + 1
         return true
     end
     return false
@@ -765,6 +742,7 @@ end
 local function addProtectedPlayer(player)
     if not player then return end
     protectedPlayers[player.Name] = true
+    stats.playersProtected = stats.playersProtected + 1
     checkAndUnjail(player)
 end
 
@@ -832,6 +810,7 @@ local function addGearbanTarget(player)
     if not player then return end
     if not table.find(gbanTargets, player.Name) then
         table.insert(gbanTargets, player.Name)
+        stats.playersGearbanned = stats.playersGearbanned + 1
         chatSystem("Now monitoring " .. player.Name .. " for gears.")
     end
 end
@@ -847,7 +826,7 @@ local function removeGearbanTarget(player)
     end
 end
 
--- === .gameinfo (updated with MarketplaceService) ===
+-- === .gameinfo ===
 local function gameInfo()
     local infoText = ""
     local success, info = pcall(function()
@@ -865,7 +844,7 @@ local function gameInfo()
     notify("Game Info", infoText, 8)
 end
 
--- === .serverinfo (with JobId and PlaceId) ===
+-- === .serverinfo ===
 local function serverInfo()
     local placeId = game.PlaceId
     local jobId = game.JobId
@@ -912,6 +891,7 @@ local function porta(targetName)
     pcall(function()
         mouseClick:FireServer(unpack(args))
     end)
+    stats.playersPortaUsed = stats.playersPortaUsed + 1
     chatSystem("Porta used on " .. target.Name)
 end
 
@@ -1157,25 +1137,12 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                 end
             end
             return nil
-        elseif cmd == ".controls" then
-            local cmds = [[
-.clr .adminclr .getinfo .antiall .antipunish .antideath .antijail
-.unantiall .unantipunish .unantideath .unantijail
-.kick .unancall .nocolall .trollclr
-.destroy .rejoin .testrj
-.gearban (.gban) .ungearban (.ungban)
-.gameinfo .serverinfo .porta
-.loopws .loopjp .loopgravity
-]]
-            print(cmds)
-            notify("Commands", "Check console (F9) for list.", 3)
-            return nil
         end
     end
     return old and old(self, ...)
 end)
 
--- === CHARACTER MONITOR WITH IMPROVED DEBOUNCE ===
+-- === CHARACTER MONITOR ===
 local wasAlive = true
 local debounce = false
 task.spawn(function()
@@ -1208,14 +1175,310 @@ task.spawn(function()
     end
 end)
 
--- === STARTUP ===
-if ChatEvent then
-    ChatEvent:FireServer("startergive self", "System")
-end
+-- === RAYFIELD UI ===
+local window = Rayfield:CreateWindow({
+    name = "Admin Pad Claimer",
+    subtitle = "v15 - Rayfield UI",
+    theme = "cobalt",
+})
 
-local executor = identifyExecutor()
-notify("Executor", "Running on: " .. executor, 4)
+-- === MAIN TAB ===
+local mainTab = window:CreateTab({
+    name = "Main",
+    icon = 93364949241311,
+})
 
-local displayName = LocalPlayer.DisplayName or LocalPlayer.Name
-notify("Welcome", "Welcome " .. displayName .. "!", 4)
-notify("Admin Pad Claimer v14", "Type .controls for command list (check console)", 4)
+-- Player Actions Group
+local actionsGroup = mainTab:CreateGroup({
+    name = "Player Actions",
+})
+
+-- Kick Input
+actionsGroup:CreateInput({
+    name = "Kick Player",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            task.spawn(function()
+                kickPlayer(text)
+            end)
+        end
+    end,
+})
+
+-- Gearban Input
+actionsGroup:CreateInput({
+    name = "Gearban Player",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            local target = getPlayerFromPartial(text)
+            if target then
+                addGearbanTarget(target)
+                notify("Gearban", "Now monitoring " .. target.Name .. " for gears.", 3)
+            else
+                notifyError("Player not found.")
+            end
+        end
+    end,
+})
+
+-- Ungearban Input
+actionsGroup:CreateInput({
+    name = "Ungearban Player",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            local target = getPlayerFromPartial(text)
+            if target then
+                removeGearbanTarget(target)
+                notify("Ungearban", "Stopped monitoring " .. target.Name .. ".", 3)
+            else
+                notifyError("Player not found.")
+            end
+        end
+    end,
+})
+
+-- Porta Input
+actionsGroup:CreateInput({
+    name = "Porta Player",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            task.spawn(function()
+                porta(text)
+            end)
+        end
+    end,
+})
+
+-- Anti-Jail Input
+actionsGroup:CreateInput({
+    name = "Anti-Jail Player",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            local target = getPlayerFromPartial(text)
+            if target then
+                addProtectedPlayer(target)
+                notify("Anti-Jail", "Anti-jail enabled for " .. target.Name, 3)
+            else
+                notifyError("Player not found.")
+            end
+        end
+    end,
+})
+
+-- Player Info Input
+actionsGroup:CreateInput({
+    name = "Get Player Info",
+    placeholder = "Enter player name",
+    callback = function(text)
+        if text and text ~= "" then
+            local target = getPlayerFromPartial(text)
+            if target then
+                local info = "Name: " .. target.Name .. " | Display: " .. target.DisplayName .. " | UserId: " .. target.UserId
+                notify("Player Info", info, 5)
+            else
+                notifyError("Player not found.")
+            end
+        end
+    end,
+})
+
+-- === LOOPS TAB ===
+local loopsTab = window:CreateTab({
+    name = "Loops",
+    icon = 93364949241311,
+})
+
+local loopsGroup = loopsTab:CreateGroup({
+    name = "Loop Controls",
+})
+
+-- WalkSpeed Loop Input
+loopsGroup:CreateInput({
+    name = "Loop WalkSpeed",
+    placeholder = "Enter speed value",
+    callback = function(text)
+        local num = tonumber(text)
+        if num then
+            if loopWSActive then
+                stopLoopWS()
+            end
+            startLoopWS(num)
+            notify("Loop WS", "WalkSpeed loop started at " .. num, 3)
+        else
+            if loopWSActive then
+                stopLoopWS()
+                notify("Loop WS", "WalkSpeed loop stopped.", 3)
+            else
+                notifyError("Invalid number. Enter a value to start, or empty to stop.")
+            end
+        end
+    end,
+})
+
+-- JumpPower Loop Input
+loopsGroup:CreateInput({
+    name = "Loop JumpPower",
+    placeholder = "Enter jump power value",
+    callback = function(text)
+        local num = tonumber(text)
+        if num then
+            if loopJPActive then
+                stopLoopJP()
+            end
+            startLoopJP(num)
+            notify("Loop JP", "JumpPower loop started at " .. num, 3)
+        else
+            if loopJPActive then
+                stopLoopJP()
+                notify("Loop JP", "JumpPower loop stopped.", 3)
+            else
+                notifyError("Invalid number. Enter a value to start, or empty to stop.")
+            end
+        end
+    end,
+})
+
+-- Gravity Loop Input
+loopsGroup:CreateInput({
+    name = "Loop Gravity",
+    placeholder = "Enter gravity value",
+    callback = function(text)
+        local num = tonumber(text)
+        if num then
+            if loopGravityActive then
+                stopLoopGravity()
+            end
+            startLoopGravity(num)
+            notify("Loop Gravity", "Gravity loop started at " .. num, 3)
+        else
+            if loopGravityActive then
+                stopLoopGravity()
+                notify("Loop Gravity", "Gravity loop stopped.", 3)
+            else
+                notifyError("Invalid number. Enter a value to start, or empty to stop.")
+            end
+        end
+    end,
+})
+
+-- === STATS TAB ===
+local statsTab = window:CreateTab({
+    name = "Stats",
+    icon = 93364949241311,
+})
+
+local statsGroup = statsTab:CreateGroup({
+    name = "Statistics",
+})
+
+-- Create stats
+local kickStat = statsGroup:CreateStat({
+    name = "Players Kicked",
+    value = 0,
+})
+
+local gearbanStat = statsGroup:CreateStat({
+    name = "Players Gearbanned",
+    value = 0,
+})
+
+local portaStat = statsGroup:CreateStat({
+    name = "Porta Used",
+    value = 0,
+})
+
+local jailStat = statsGroup:CreateStat({
+    name = "Players Jailed",
+    value = 0,
+})
+
+local protectedStat = statsGroup:CreateStat({
+    name = "Players Protected",
+    value = 0,
+})
+
+-- Update stats periodically
+task.spawn(function()
+    while monitorLoopActive do
+        kickStat:Set(stats.playersKicked)
+        gearbanStat:Set(stats.playersGearbanned)
+        portaStat:Set(stats.playersPortaUsed)
+        jailStat:Set(stats.playersJailed)
+        protectedStat:Set(stats.playersProtected)
+        task.wait(1)
+    end
+end)
+
+-- === INFO TAB (Read-Only) ===
+local infoTab = window:CreateTab({
+    name = "Info",
+    icon = 93364949241311,
+})
+
+local infoGroup = infoTab:CreateGroup({
+    name = "Server Information",
+})
+
+-- Store stat handles for info
+local placeNameStat = infoGroup:CreateStat({
+    name = "Place Name",
+    value = "Loading...",
+})
+
+local creatorNameStat = infoGroup:CreateStat({
+    name = "Creator",
+    value = "Loading...",
+})
+
+local creatorTypeStat = infoGroup:CreateStat({
+    name = "Creator Type",
+    value = "Loading...",
+})
+
+local gameIdStat = infoGroup:CreateStat({
+    name = "Game ID",
+    value = game.GameId,
+})
+
+local placeIdStat = infoGroup:CreateStat({
+    name = "Place ID",
+    value = tostring(game.PlaceId),
+})
+
+local jobIdStat = infoGroup:CreateStat({
+    name = "Job ID",
+    value = game.JobId,
+})
+
+local playersStat = infoGroup:CreateStat({
+    name = "Players",
+    value = tostring(#Players:GetPlayers()),
+})
+
+-- Fetch and update place info
+task.spawn(function()
+    local success, info = pcall(function()
+        return MarketplaceService:GetProductInfo(game.PlaceId)
+    end)
+    if success and info then
+        placeNameStat:Set(info.Name or "Unknown")
+        local creatorName = info.Creator and info.Creator.Name or "Unknown"
+        creatorNameStat:Set(creatorName)
+        local creatorType = info.Creator and info.Creator.CreatorType or "Unknown"
+        creatorTypeStat:Set(tostring(creatorType))
+    else
+        placeNameStat:Set("Could not fetch")
+        creatorNameStat:Set("Could not fetch")
+        creatorTypeStat:Set("Could not fetch")
+    end
+end)
+
+-- Update players count periodically
+task.spawn(function()
+    while monitorLoopActive do
+        playersStat:Set(tos
