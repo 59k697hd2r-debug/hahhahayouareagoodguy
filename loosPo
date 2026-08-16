@@ -1,9 +1,9 @@
--- ===== VERSION 36: CORRECT DROPDOWN UPDATE (:Set) =====
-if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 36 then
+-- ===== VERSION 38: FIXED FRIENDS BUTTONS, PROPER INFO LOADING =====
+if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 38 then
     script:Destroy()
     return
 end
-_G.ADMIN_SCRIPT_VERSION = 36
+_G.ADMIN_SCRIPT_VERSION = 38
 
 -- === ALLOWED GAME/PLACE IDs ===
 local ALLOWED_GAME_IDS = {}
@@ -60,12 +60,13 @@ local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
 -- === GLOBAL REFS ===
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
-local StarterGui = game:GetService("StarterGui")
+local GroupService = game:GetService("GroupService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
 local TeleportService = game:GetService("TeleportService")
-local MarketplaceService = game:GetService("MarketplaceService")
+local StarterGui = game:GetService("StarterGui")
 
 -- === GAMEPASS IDs ===
 local GAMEPASS_PERM_ADMIN = 735344035
@@ -87,6 +88,7 @@ local autoClaimEnabled = true
 local padClaimerThread = nil
 local friendsInGame = {}
 local chatCommandsEnabled = true
+local friendButtons = {}   -- store button references for clearing
 
 -- === LOOP STATE ===
 local loopWSActive = false
@@ -132,7 +134,7 @@ end
 -- ========================================
 local window = Rayfield:CreateWindow({
     name = "Admin Pad Claimer",
-    subtitle = "v36 - Fixed Dropdown",
+    subtitle = "v38 - Fixed UI",
 })
 
 -- === NOTIFICATION ===
@@ -188,9 +190,9 @@ Players.PlayerAdded:Connect(toastJoin)
 Players.PlayerRemoving:Connect(toastLeave)
 
 -- ========================================
--- === FRIEND TRACKING (USING IsFriendsWith) ===
+-- === FRIEND TRACKING (BUTTONS) ===
 -- ========================================
-local friendsDropdown = nil
+local friendsListGroup = nil  -- will be assigned later
 
 local function updateFriends()
     local localPlayer = LocalPlayer
@@ -222,24 +224,57 @@ local function updateFriends()
         end
     end
     friendsInGame = currentFriends
-    if friendsDropdown then
-        local options = {}
-        for _, friend in ipairs(friendsInGame) do
-            table.insert(options, friend.Name .. " (" .. friend.UserId .. ")")
-        end
-        if #options == 0 then
-            table.insert(options, "No friends in this game")
-        end
-        -- Use the correct method :Set (Rayfield Gen2)
-        local success, err = pcall(function()
-            friendsDropdown:Set(options)
+
+    -- Clear existing buttons
+    for _, btn in ipairs(friendButtons) do
+        pcall(function()
+            btn:Destroy()
         end)
-        if not success then
-            warn("Failed to set friends dropdown options:", err)
-            -- Try alternative if Set fails
-            pcall(function()
-                friendsDropdown:Update(options)
-            end)
+    end
+    friendButtons = {}
+
+    -- Add new buttons
+    if friendsListGroup then
+        if #friendsInGame == 0 then
+            local btn = friendsListGroup:CreateButton({
+                name = "No friends in this game",
+                callback = function() end,
+            })
+            table.insert(friendButtons, btn)
+        else
+            for _, friend in ipairs(friendsInGame) do
+                local friendName = friend.Name
+                local userId = friend.UserId
+                local btn = friendsListGroup:CreateButton({
+                    name = friendName .. " (" .. userId .. ")",
+                    callback = function()
+                        window:Popup({
+                            title = "Join Friend",
+                            content = "Do you want to join " .. friendName .. "?",
+                            options = {
+                                { text = "Cancel" },
+                                {
+                                    text = "Join",
+                                    style = "primary",
+                                    callback = function()
+                                        local success, userPresent, friendPlaceId, friendJobId = pcall(function()
+                                            return TeleportService:GetPlayerPlaceInstanceAsync(userId)
+                                        end)
+                                        if success and userPresent and friendPlaceId == game.PlaceId then
+                                            pcall(function()
+                                                TeleportService:TeleportToPlaceInstance(friendPlaceId, friendJobId, LocalPlayer)
+                                            end)
+                                        else
+                                            notify("Join Friend", "Friend not in this game or unavailable.", 3)
+                                        end
+                                    end
+                                },
+                            },
+                        })
+                    end,
+                })
+                table.insert(friendButtons, btn)
+            end
         end
     end
 end
@@ -1239,34 +1274,26 @@ local function rejoin()
     end
 end
 
--- === .gameinfo ===
+-- === .gameinfo (using proper methods) ===
 local function gameInfo()
-    local infoText = ""
     local success, info = pcall(function()
         return MarketplaceService:GetProductInfo(game.PlaceId)
     end)
-    if success and info then
-        local placeName = info.Name or "Unknown"
-        local creatorName = info.Creator and info.Creator.Name or "Unknown"
-        local creatorType = info.Creator and info.Creator.CreatorType or "Unknown"
-        infoText = "Place: " .. placeName .. "\nCreator: " .. creatorName .. " (" .. tostring(creatorType) .. ")"
-    else
-        infoText = "Could not fetch product info."
-        local creatorId = game.CreatorId
-        if creatorId and creatorId ~= 0 then
-            local creatorType = game.CreatorType
-            local creatorName = ""
-            if creatorType == Enum.CreatorType.User then
-                local success2, name = pcall(function()
-                    return Players:GetNameFromUserIdAsync(creatorId)
-                end)
-                if success2 then creatorName = name end
-            elseif creatorType == Enum.CreatorType.Group then
-                creatorName = "Group ID " .. creatorId
-            end
-            infoText = "Place ID: " .. game.PlaceId .. "\nCreator: " .. (creatorName or "Unknown") .. " (" .. tostring(creatorType) .. ")"
-        end
+    local gameName = success and info.Name or "Unknown"
+    local creatorType = game.CreatorType.Name
+    local creatorName = ""
+    if game.CreatorType == Enum.CreatorType.User then
+        local success2, name = pcall(function()
+            return Players:GetNameFromUserIdAsync(game.CreatorId)
+        end)
+        creatorName = success2 and name or "Unknown User"
+    elseif game.CreatorType == Enum.CreatorType.Group then
+        local success2, groupInfo = pcall(function()
+            return GroupService:GetGroupInfoAsync(game.CreatorId)
+        end)
+        creatorName = success2 and groupInfo.Name or "Unknown Group"
     end
+    local infoText = "Place: " .. gameName .. "\nCreator: " .. creatorName .. " (" .. creatorType .. ")"
     infoText = infoText .. "\nGameId: " .. game.GameId .. "\nPlaceId: " .. game.PlaceId .. "\nCreatorId: " .. game.CreatorId .. "\nCreatorType: " .. tostring(game.CreatorType) .. "\nPrivateServerId: " .. game.PrivateServerId .. "\nPrivateServerOwnerId: " .. game.PrivateServerOwnerId
     notify("Game Info", infoText, 8)
 end
@@ -1644,44 +1671,7 @@ local friendsTab = window:CreateTab({
     icon = ICONS.friends,
 })
 
-friendsDropdown = friendsTab:CreateDropdown({
-    name = "Join Friend",
-    multiSelect = false,
-    options = { "Loading friends..." },
-    callback = function(selected)
-        if not selected or #selected == 0 then return end
-        local selectedStr = selected[1]
-        if not selectedStr or selectedStr == "No friends in this game" or selectedStr == "Loading friends..." then return end
-        local userId = string.match(selectedStr, "%((%d+)%)")
-        if userId then
-            local friendUserId = tonumber(userId)
-            window:Popup({
-                title = "Join Friend",
-                content = "Do you want to join " .. selectedStr:gsub("%s%(.-%)$", "") .. "?",
-                options = {
-                    { text = "Cancel" },
-                    {
-                        text = "Join",
-                        style = "primary",
-                        callback = function()
-                            local success, userPresent, friendPlaceId, friendJobId = pcall(function()
-                                return TeleportService:GetPlayerPlaceInstanceAsync(friendUserId)
-                            end)
-                            if success and userPresent and friendPlaceId == game.PlaceId then
-                                pcall(function()
-                                    TeleportService:TeleportToPlaceInstance(friendPlaceId, friendJobId, LocalPlayer)
-                                end)
-                            else
-                                notify("Join Friend", "Friend not in this game or unavailable.", 3)
-                            end
-                        end
-                    },
-                },
-            })
-        end
-    end,
-})
-
+-- Refresh button
 friendsTab:CreateButton({
     name = "Refresh Friends List",
     callback = function()
@@ -1690,11 +1680,19 @@ friendsTab:CreateButton({
     end,
 })
 
--- ========================================
--- === START FRIEND UPDATE LOOP (after UI) ===
--- ========================================
+-- Group for friend buttons
+friendsListGroup = friendsTab:CreateGroup({
+    name = "Friends in Game",
+})
+
+-- Initial update after UI is ready
 task.spawn(function()
     task.wait(1)
+    updateFriends()
+end)
+
+-- Continuous update loop
+task.spawn(function()
     while monitorLoopActive do
         updateFriends()
         task.wait(0.5)
@@ -1868,34 +1866,23 @@ infoGroup:CreateButton({
             local success, info = pcall(function()
                 return MarketplaceService:GetProductInfo(game.PlaceId)
             end)
-            if success and info then
-                placeNameStat:Set(info.Name or "Unknown")
-                local creatorName = info.Creator and info.Creator.Name or "Unknown"
-                creatorNameStat:Set(creatorName)
-                local creatorType = info.Creator and info.Creator.CreatorType or "Unknown"
-                creatorTypeStat:Set(tostring(creatorType))
-            else
-                local creatorId = game.CreatorId
-                if creatorId and creatorId ~= 0 then
-                    local creatorType = game.CreatorType
-                    local creatorName = ""
-                    if creatorType == Enum.CreatorType.User then
-                        local success2, name = pcall(function()
-                            return Players:GetNameFromUserIdAsync(creatorId)
-                        end)
-                        if success2 then creatorName = name end
-                    elseif creatorType == Enum.CreatorType.Group then
-                        creatorName = "Group " .. creatorId
-                    end
-                    placeNameStat:Set("Place " .. game.PlaceId)
-                    creatorNameStat:Set(creatorName or "Unknown")
-                    creatorTypeStat:Set(tostring(creatorType))
-                else
-                    placeNameStat:Set("Could not fetch")
-                    creatorNameStat:Set("Could not fetch")
-                    creatorTypeStat:Set("Could not fetch")
-                end
+            local gameName = success and info.Name or "Unknown"
+            local creatorType = game.CreatorType.Name
+            local creatorName = ""
+            if game.CreatorType == Enum.CreatorType.User then
+                local success2, name = pcall(function()
+                    return Players:GetNameFromUserIdAsync(game.CreatorId)
+                end)
+                creatorName = success2 and name or "Unknown User"
+            elseif game.CreatorType == Enum.CreatorType.Group then
+                local success2, groupInfo = pcall(function()
+                    return GroupService:GetGroupInfoAsync(game.CreatorId)
+                end)
+                creatorName = success2 and groupInfo.Name or "Unknown Group"
             end
+            placeNameStat:Set(gameName)
+            creatorNameStat:Set(creatorName)
+            creatorTypeStat:Set(creatorType)
         end)
     end,
 })
@@ -2036,7 +2023,7 @@ task.spawn(function()
     end
 end)
 
--- === FETCH PLACE INFO ===
+-- === FETCH PLACE INFO ON STARTUP (using proper methods) ===
 task.spawn(function()
     local retries = 0
     while retries < 5 do
@@ -2044,11 +2031,23 @@ task.spawn(function()
             return MarketplaceService:GetProductInfo(game.PlaceId)
         end)
         if success and info then
-            placeNameStat:Set(info.Name or "Unknown")
-            local creatorName = info.Creator and info.Creator.Name or "Unknown"
+            local gameName = info.Name or "Unknown"
+            local creatorType = game.CreatorType.Name
+            local creatorName = ""
+            if game.CreatorType == Enum.CreatorType.User then
+                local success2, name = pcall(function()
+                    return Players:GetNameFromUserIdAsync(game.CreatorId)
+                end)
+                creatorName = success2 and name or "Unknown User"
+            elseif game.CreatorType == Enum.CreatorType.Group then
+                local success2, groupInfo = pcall(function()
+                    return GroupService:GetGroupInfoAsync(game.CreatorId)
+                end)
+                creatorName = success2 and groupInfo.Name or "Unknown Group"
+            end
+            placeNameStat:Set(gameName)
             creatorNameStat:Set(creatorName)
-            local creatorType = info.Creator and info.Creator.CreatorType or "Unknown"
-            creatorTypeStat:Set(tostring(creatorType))
+            creatorTypeStat:Set(creatorType)
             break
         else
             retries = retries + 1
@@ -2056,26 +2055,9 @@ task.spawn(function()
         end
     end
     if retries == 5 then
-        local creatorId = game.CreatorId
-        if creatorId and creatorId ~= 0 then
-            local creatorType = game.CreatorType
-            local creatorName = ""
-            if creatorType == Enum.CreatorType.User then
-                local success2, name = pcall(function()
-                    return Players:GetNameFromUserIdAsync(creatorId)
-                end)
-                if success2 then creatorName = name end
-            elseif creatorType == Enum.CreatorType.Group then
-                creatorName = "Group " .. creatorId
-            end
-            placeNameStat:Set("Place " .. game.PlaceId)
-            creatorNameStat:Set(creatorName or "Unknown")
-            creatorTypeStat:Set(tostring(creatorType))
-        else
-            placeNameStat:Set("Could not fetch")
-            creatorNameStat:Set("Could not fetch")
-            creatorTypeStat:Set("Could not fetch")
-        end
+        placeNameStat:Set("Could not fetch")
+        creatorNameStat:Set("Could not fetch")
+        creatorTypeStat:Set("Could not fetch")
     end
 end)
 
@@ -2444,4 +2426,4 @@ notify("Executor", "Running on: " .. executor, 4)
 
 local displayName = LocalPlayer.DisplayName or LocalPlayer.Name
 notify("Welcome", "Welcome " .. displayName .. "!", 4)
-notify("Admin Pad Claimer v36", "Type .controls for command list or use UI.", 4)
+notify("Admin Pad Claimer v38", "Type .controls for command list or use UI.", 4)
