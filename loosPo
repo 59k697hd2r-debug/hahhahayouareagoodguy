@@ -1,9 +1,9 @@
--- ===== VERSION 35: FIXED DROPDOWN SET METHOD =====
-if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 35 then
+-- ===== VERSION 36: CORRECT DROPDOWN UPDATE (:Set) =====
+if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 36 then
     script:Destroy()
     return
 end
-_G.ADMIN_SCRIPT_VERSION = 35
+_G.ADMIN_SCRIPT_VERSION = 36
 
 -- === ALLOWED GAME/PLACE IDs ===
 local ALLOWED_GAME_IDS = {}
@@ -132,7 +132,7 @@ end
 -- ========================================
 local window = Rayfield:CreateWindow({
     name = "Admin Pad Claimer",
-    subtitle = "v35 - Fixed Dropdown",
+    subtitle = "v36 - Fixed Dropdown",
 })
 
 -- === NOTIFICATION ===
@@ -230,18 +230,16 @@ local function updateFriends()
         if #options == 0 then
             table.insert(options, "No friends in this game")
         end
+        -- Use the correct method :Set (Rayfield Gen2)
         local success, err = pcall(function()
-            -- FIX: use :Set() instead of :SetOptions()
-            if friendsDropdown.Set then
-                friendsDropdown:Set(options)
-            elseif friendsDropdown.Update then
-                friendsDropdown:Update(options)
-            else
-                error("No method to set dropdown options")
-            end
+            friendsDropdown:Set(options)
         end)
         if not success then
             warn("Failed to set friends dropdown options:", err)
+            -- Try alternative if Set fails
+            pcall(function()
+                friendsDropdown:Update(options)
+            end)
         end
     end
 end
@@ -2446,4 +2444,4 @@ notify("Executor", "Running on: " .. executor, 4)
 
 local displayName = LocalPlayer.DisplayName or LocalPlayer.Name
 notify("Welcome", "Welcome " .. displayName .. "!", 4)
-notify("Admin Pad Claimer v35", "Type .controls for command list or use UI.", 4)
+notify("Admin Pad Claimer v36", "Type .controls for command list or use UI.", 4)
