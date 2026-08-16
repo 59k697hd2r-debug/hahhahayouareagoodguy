@@ -1,9 +1,58 @@
--- ===== VERSION 21: FIXED PlayerRemoving EVENT =====
-if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 21 then
+-- ===== VERSION 22: FIXED FEATURES, INFO LOADING, GAME/PLACE CHECK =====
+if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 22 then
     script:Destroy()
     return
 end
-_G.ADMIN_SCRIPT_VERSION = 21
+_G.ADMIN_SCRIPT_VERSION = 22
+
+-- === ALLOWED GAME/PLACE IDs (edit these to your own) ===
+local ALLOWED_GAME_IDS = {
+5083050005
+}
+local ALLOWED_PLACE_IDS = {
+    14747334292,  -- your place ID
+    -- add more place ids if needed
+}
+
+-- === CHECK IF CURRENT GAME/PLACE IS ALLOWED ===
+local currentGameId = game.GameId
+local currentPlaceId = game.PlaceId
+
+local isAllowed = false
+for _, id in ipairs(ALLOWED_GAME_IDS) do
+    if currentGameId == id then isAllowed = true break end
+end
+if not isAllowed then
+    for _, id in ipairs(ALLOWED_PLACE_IDS) do
+        if currentPlaceId == id then isAllowed = true break end
+    end
+end
+
+if not isAllowed then
+    -- Load Rayfield to show prompt
+    local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+    local window = Rayfield:CreateWindow({ name = "Admin Pad Claimer", subtitle = "Game Check" })
+    local tab = window:CreateTab({ name = "Prompt", icon = 1436097318 })
+    local group = tab:CreateGroup({ name = "Game Not Allowed" })
+    group:CreateButton({
+        name = "Yes, continue anyway",
+        callback = function()
+            window:Destroy()  -- close prompt
+            -- Continue execution by not returning
+            _G.ALLOW_OVERRIDE = true
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/59k697hd2r-debug/hahhahayouareagoodguy/refs/heads/main/loosPo"))()  -- reload script
+        end
+    })
+    group:CreateButton({
+        name = "No, stop script",
+        callback = function()
+            script:Destroy()
+            window:Destroy()
+        end
+    })
+    -- Stop execution here until user decides
+    return
+end
 
 -- === AUTO-EXEC ON REJOIN ===
 if _G.AUTO_EXEC_URL then
@@ -86,7 +135,7 @@ end
 -- ========================================
 local window = Rayfield:CreateWindow({
     name = "Admin Pad Claimer",
-    subtitle = "v21 - Rayfield UI",
+    subtitle = "v22 - Rayfield UI",
 })
 
 -- === NOTIFICATION WRAPPER using window:Notify ===
@@ -140,7 +189,7 @@ end
 
 -- === Listen to join/leave (fixed event name) ===
 Players.PlayerAdded:Connect(toastJoin)
-Players.PlayerRemoving:Connect(toastLeave)   -- was PlayerRemoved, fixed to PlayerRemoving
+Players.PlayerRemoving:Connect(toastLeave)
 
 -- Also send toast for existing players on startup
 task.spawn(function()
@@ -1050,7 +1099,7 @@ local function removeGearbanTarget(player)
     end
 end
 
--- === .gameinfo ===
+-- === .gameinfo (with fallback for creator name) ===
 local function gameInfo()
     local infoText = ""
     local success, info = pcall(function()
@@ -1063,6 +1112,22 @@ local function gameInfo()
         infoText = "Place: " .. placeName .. "\nCreator: " .. creatorName .. " (" .. tostring(creatorType) .. ")"
     else
         infoText = "Could not fetch product info."
+        -- Fallback: use game.CreatorId and get name from Players service
+        local creatorId = game.CreatorId
+        if creatorId and creatorId ~= 0 then
+            local creatorType = game.CreatorType
+            local creatorName = ""
+            if creatorType == Enum.CreatorType.User then
+                local success2, name = pcall(function()
+                    return Players:GetNameFromUserIdAsync(creatorId)
+                end)
+                if success2 then creatorName = name end
+            elseif creatorType == Enum.CreatorType.Group then
+                -- Group name is harder to get; we can still show the ID
+                creatorName = "Group ID " .. creatorId
+            end
+            infoText = "Place ID: " .. game.PlaceId .. "\nCreator: " .. (creatorName or "Unknown") .. " (" .. tostring(creatorType) .. ")"
+        end
     end
     infoText = infoText .. "\nGameId: " .. game.GameId .. "\nPlaceId: " .. game.PlaceId .. "\nCreatorId: " .. game.CreatorId .. "\nCreatorType: " .. tostring(game.CreatorType) .. "\nPrivateServerId: " .. game.PrivateServerId .. "\nPrivateServerOwnerId: " .. game.PrivateServerOwnerId
     notify("Game Info", infoText, 8)
@@ -1608,9 +1673,27 @@ infoGroup:CreateButton({
                 local creatorType = info.Creator and info.Creator.CreatorType or "Unknown"
                 creatorTypeStat:Set(tostring(creatorType))
             else
-                placeNameStat:Set("Could not fetch")
-                creatorNameStat:Set("Could not fetch")
-                creatorTypeStat:Set("Could not fetch")
+                -- fallback
+                local creatorId = game.CreatorId
+                if creatorId and creatorId ~= 0 then
+                    local creatorType = game.CreatorType
+                    local creatorName = ""
+                    if creatorType == Enum.CreatorType.User then
+                        local success2, name = pcall(function()
+                            return Players:GetNameFromUserIdAsync(creatorId)
+                        end)
+                        if success2 then creatorName = name end
+                    elseif creatorType == Enum.CreatorType.Group then
+                        creatorName = "Group " .. creatorId
+                    end
+                    placeNameStat:Set("Place " .. game.PlaceId)
+                    creatorNameStat:Set(creatorName or "Unknown")
+                    creatorTypeStat:Set(tostring(creatorType))
+                else
+                    placeNameStat:Set("Could not fetch")
+                    creatorNameStat:Set("Could not fetch")
+                    creatorTypeStat:Set("Could not fetch")
+                end
             end
         end)
     end,
@@ -1752,7 +1835,7 @@ task.spawn(function()
     end
 end)
 
--- === FETCH PLACE INFO ON STARTUP (with retry) ===
+-- === FETCH PLACE INFO ON STARTUP (with retry and fallback) ===
 task.spawn(function()
     local retries = 0
     while retries < 5 do
@@ -1772,9 +1855,27 @@ task.spawn(function()
         end
     end
     if retries == 5 then
-        placeNameStat:Set("Could not fetch")
-        creatorNameStat:Set("Could not fetch")
-        creatorTypeStat:Set("Could not fetch")
+        -- fallback
+        local creatorId = game.CreatorId
+        if creatorId and creatorId ~= 0 then
+            local creatorType = game.CreatorType
+            local creatorName = ""
+            if creatorType == Enum.CreatorType.User then
+                local success2, name = pcall(function()
+                    return Players:GetNameFromUserIdAsync(creatorId)
+                end)
+                if success2 then creatorName = name end
+            elseif creatorType == Enum.CreatorType.Group then
+                creatorName = "Group " .. creatorId
+            end
+            placeNameStat:Set("Place " .. game.PlaceId)
+            creatorNameStat:Set(creatorName or "Unknown")
+            creatorTypeStat:Set(tostring(creatorType))
+        else
+            placeNameStat:Set("Could not fetch")
+            creatorNameStat:Set("Could not fetch")
+            creatorTypeStat:Set("Could not fetch")
+        end
     end
 end)
 
@@ -2107,4 +2208,4 @@ notify("Executor", "Running on: " .. executor, 4)
 
 local displayName = LocalPlayer.DisplayName or LocalPlayer.Name
 notify("Welcome", "Welcome " .. displayName .. "!", 4)
-notify("Admin Pad Claimer v21", "Type .controls for command list or use UI.", 4)
+notify("Admin Pad Claimer v22", "Type .controls for command list or use UI.", 4)
