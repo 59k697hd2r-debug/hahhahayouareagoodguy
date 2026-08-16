@@ -1,9 +1,9 @@
--- ===== VERSION 26: FIXED STATS SET, FRIENDS TAB POPULATED =====
-if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 26 then
+-- ===== VERSION 28: FIXED CREATE COLUMN ERROR =====
+if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 28 then
     script:Destroy()
     return
 end
-_G.ADMIN_SCRIPT_VERSION = 26
+_G.ADMIN_SCRIPT_VERSION = 28
 
 -- === ALLOWED GAME/PLACE IDs ===
 local ALLOWED_GAME_IDS = {}
@@ -131,7 +131,7 @@ end
 -- ========================================
 local window = Rayfield:CreateWindow({
     name = "Admin Pad Claimer",
-    subtitle = "v26 - Fixed Stats",
+    subtitle = "v28 - Fixed UI",
 })
 
 -- === NOTIFICATION ===
@@ -1644,18 +1644,14 @@ mainTab:CreateInput({
     end,
 })
 
--- === FRIENDS TAB ===
+-- === FRIENDS TAB (no group, just elements on tab) ===
 local friendsTab = window:CreateTab({
     name = "Friends",
     icon = ICONS.friends,
 })
 
-local friendsGroup = friendsTab:CreateGroup({
-    name = "Friend Actions",
-})
-
-local friendsDropdown = nil
-friendsDropdown = friendsGroup:CreateDropdown({
+-- Place dropdown directly on tab (it will be in a column automatically)
+local friendsDropdown = friendsTab:CreateDropdown({
     name = "Join Friend",
     multiSelect = false,
     options = { "Loading friends..." },
@@ -1678,6 +1674,15 @@ friendsDropdown = friendsGroup:CreateDropdown({
                 end
             end
         end
+    end,
+})
+
+-- Add refresh button
+friendsTab:CreateButton({
+    name = "Refresh Friends List",
+    callback = function()
+        updateFriends()
+        notify("Friends", "Refreshed.", 3)
     end,
 })
 
@@ -1821,12 +1826,12 @@ local creatorTypeStat = infoGroup:CreateStat({
 
 local gameIdStat = infoGroup:CreateStat({
     name = "Game ID",
-    value = game.GameId,
+    value = tonumber(game.GameId) or 0,
 })
 
 local placeIdStat = infoGroup:CreateStat({
     name = "Place ID",
-    value = tonumber(game.PlaceId),
+    value = tonumber(game.PlaceId) or 0,
 })
 
 local jobIdStat = infoGroup:CreateStat({
@@ -1836,10 +1841,10 @@ local jobIdStat = infoGroup:CreateStat({
 
 local playersStat = infoGroup:CreateStat({
     name = "Players",
-    value = #Players:GetPlayers(),  -- numeric
+    value = #Players:GetPlayers(),
 })
 
--- User info as a button (since Stat expects number)
+-- User info as a button
 local userGroup = infoTab:CreateGroup({
     name = "Script User",
 })
@@ -2019,12 +2024,14 @@ task.spawn(function()
         jailStat:Set(stats.playersJailed)
         protectedStat:Set(stats.playersProtected)
         playersStat:Set(#Players:GetPlayers())
-        -- Update user button
+        -- Update user button text
         local friendText = ""
         if table.find(friendsInGame, LocalPlayer.UserId) then
             friendText = " (Friend)"
         end
-        userButton:Set(LocalPlayer.DisplayName .. friendText) -- Button:Set updates the text
+        pcall(function()
+            userButton:SetText(LocalPlayer.DisplayName .. friendText)
+        end)
         task.wait(1)
     end
 end)
@@ -2420,4 +2427,4 @@ notify("Executor", "Running on: " .. executor, 4)
 
 local displayName = LocalPlayer.DisplayName or LocalPlayer.Name
 notify("Welcome", "Welcome " .. displayName .. "!", 4)
-notify("Admin Pad Claimer v26", "Type .controls for command list or use UI.", 4)
+notify("Admin Pad Claimer v28", "Type .controls for command list or use UI.", 4)
