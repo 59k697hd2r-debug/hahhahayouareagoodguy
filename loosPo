@@ -1,9 +1,9 @@
--- ===== VERSION 38: FIXED FRIENDS BUTTONS, PROPER INFO LOADING =====
-if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 38 then
+-- ===== VERSION 39: FRIENDS TAB FIXED (NO SPAM, SMART UPDATES) =====
+if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 39 then
     script:Destroy()
     return
 end
-_G.ADMIN_SCRIPT_VERSION = 38
+_G.ADMIN_SCRIPT_VERSION = 39
 
 -- === ALLOWED GAME/PLACE IDs ===
 local ALLOWED_GAME_IDS = {}
@@ -86,9 +86,11 @@ local antiFreezeActive = false
 local afkActive = false
 local autoClaimEnabled = true
 local padClaimerThread = nil
-local friendsInGame = {}
 local chatCommandsEnabled = true
-local friendButtons = {}   -- store button references for clearing
+
+-- === FRIENDS TRACKING ===
+local friendsInGame = {}          -- list of player objects
+local lastFriendsList = {}        -- list of userIds to compare changes
 
 -- === LOOP STATE ===
 local loopWSActive = false
@@ -134,7 +136,7 @@ end
 -- ========================================
 local window = Rayfield:CreateWindow({
     name = "Admin Pad Claimer",
-    subtitle = "v38 - Fixed UI",
+    subtitle = "v39 - Friends Fixed",
 })
 
 -- === NOTIFICATION ===
@@ -190,9 +192,65 @@ Players.PlayerAdded:Connect(toastJoin)
 Players.PlayerRemoving:Connect(toastLeave)
 
 -- ========================================
--- === FRIEND TRACKING (BUTTONS) ===
+-- === FRIEND TRACKING (BUTTONS, NO SPAM) ===
 -- ========================================
-local friendsListGroup = nil  -- will be assigned later
+local friendsListGroup = nil
+local friendButtonRefs = {}   -- store button objects
+
+local function rebuildFriendButtons()
+    -- Clear existing buttons (without destroying the group itself)
+    for _, btn in ipairs(friendButtonRefs) do
+        pcall(function() btn:Destroy() end)
+    end
+    friendButtonRefs = {}
+
+    if not friendsListGroup then
+        warn("friendsListGroup is nil, cannot rebuild.")
+        return
+    end
+
+    if #friendsInGame == 0 then
+        local btn = friendsListGroup:CreateButton({
+            name = "No friends in this game",
+            callback = function() end,
+        })
+        table.insert(friendButtonRefs, btn)
+    else
+        for _, friend in ipairs(friendsInGame) do
+            local friendName = friend.Name
+            local userId = friend.UserId
+            local btn = friendsListGroup:CreateButton({
+                name = friendName .. " (" .. userId .. ")",
+                callback = function()
+                    window:Popup({
+                        title = "Join Friend",
+                        content = "Do you want to join " .. friendName .. "?",
+                        options = {
+                            { text = "Cancel" },
+                            {
+                                text = "Join",
+                                style = "primary",
+                                callback = function()
+                                    local success, userPresent, friendPlaceId, friendJobId = pcall(function()
+                                        return TeleportService:GetPlayerPlaceInstanceAsync(userId)
+                                    end)
+                                    if success and userPresent and friendPlaceId == game.PlaceId then
+                                        pcall(function()
+                                            TeleportService:TeleportToPlaceInstance(friendPlaceId, friendJobId, LocalPlayer)
+                                        end)
+                                    else
+                                        notify("Join Friend", "Friend not in this game or unavailable.", 3)
+                                    end
+                                end
+                            },
+                        },
+                    })
+                end,
+            })
+            table.insert(friendButtonRefs, btn)
+        end
+    end
+end
 
 local function updateFriends()
     local localPlayer = LocalPlayer
@@ -207,6 +265,8 @@ local function updateFriends()
             end
         end
     end
+
+    -- Check for new friends (toast)
     for _, friend in ipairs(currentFriends) do
         local alreadyTracked = false
         for _, tracked in ipairs(friendsInGame) do
@@ -223,59 +283,30 @@ local function updateFriends()
             })
         end
     end
+
+    -- Update the stored list
     friendsInGame = currentFriends
 
-    -- Clear existing buttons
-    for _, btn in ipairs(friendButtons) do
-        pcall(function()
-            btn:Destroy()
-        end)
+    -- Rebuild buttons only if the list has changed
+    local currentUserIds = {}
+    for _, f in ipairs(friendsInGame) do
+        table.insert(currentUserIds, f.UserId)
     end
-    friendButtons = {}
-
-    -- Add new buttons
-    if friendsListGroup then
-        if #friendsInGame == 0 then
-            local btn = friendsListGroup:CreateButton({
-                name = "No friends in this game",
-                callback = function() end,
-            })
-            table.insert(friendButtons, btn)
-        else
-            for _, friend in ipairs(friendsInGame) do
-                local friendName = friend.Name
-                local userId = friend.UserId
-                local btn = friendsListGroup:CreateButton({
-                    name = friendName .. " (" .. userId .. ")",
-                    callback = function()
-                        window:Popup({
-                            title = "Join Friend",
-                            content = "Do you want to join " .. friendName .. "?",
-                            options = {
-                                { text = "Cancel" },
-                                {
-                                    text = "Join",
-                                    style = "primary",
-                                    callback = function()
-                                        local success, userPresent, friendPlaceId, friendJobId = pcall(function()
-                                            return TeleportService:GetPlayerPlaceInstanceAsync(userId)
-                                        end)
-                                        if success and userPresent and friendPlaceId == game.PlaceId then
-                                            pcall(function()
-                                                TeleportService:TeleportToPlaceInstance(friendPlaceId, friendJobId, LocalPlayer)
-                                            end)
-                                        else
-                                            notify("Join Friend", "Friend not in this game or unavailable.", 3)
-                                        end
-                                    end
-                                },
-                            },
-                        })
-                    end,
-                })
-                table.insert(friendButtons, btn)
+    table.sort(currentUserIds)
+    local changed = false
+    if #currentUserIds ~= #lastFriendsList then
+        changed = true
+    else
+        for i = 1, #currentUserIds do
+            if currentUserIds[i] ~= lastFriendsList[i] then
+                changed = true
+                break
             end
         end
+    end
+    if changed then
+        lastFriendsList = currentUserIds
+        rebuildFriendButtons()
     end
 end
 
@@ -1274,7 +1305,7 @@ local function rejoin()
     end
 end
 
--- === .gameinfo (using proper methods) ===
+-- === .gameinfo ===
 local function gameInfo()
     local success, info = pcall(function()
         return MarketplaceService:GetProductInfo(game.PlaceId)
@@ -1691,11 +1722,11 @@ task.spawn(function()
     updateFriends()
 end)
 
--- Continuous update loop
+-- Continuous update loop (only check every 2 seconds to reduce load)
 task.spawn(function()
     while monitorLoopActive do
         updateFriends()
-        task.wait(0.5)
+        task.wait(2)
     end
 end)
 
@@ -2426,4 +2457,4 @@ notify("Executor", "Running on: " .. executor, 4)
 
 local displayName = LocalPlayer.DisplayName or LocalPlayer.Name
 notify("Welcome", "Welcome " .. displayName .. "!", 4)
-notify("Admin Pad Claimer v38", "Type .controls for command list or use UI.", 4)
+notify("Admin Pad Claimer v39", "Type .controls for command list or use UI.", 4)
