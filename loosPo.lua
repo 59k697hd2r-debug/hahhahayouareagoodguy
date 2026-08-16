@@ -1,9 +1,9 @@
--- ===== VERSION 4: NOTIFY ERRORS, KICK FIXED, TESTRJ WORKS =====
-if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 4 then
+-- ===== VERSION 5: ANTI-JAIL lower J, EXECUTOR ID, .controls, .gban, .gameinfo, .serverinfo, .porta, improved rejoin =====
+if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 5 then
     script:Destroy()
     return
 end
-_G.ADMIN_SCRIPT_VERSION = 4
+_G.ADMIN_SCRIPT_VERSION = 5
 
 -- === AUTO-EXEC ON REJOIN (for .testrj) ===
 if _G.AUTO_EXEC_URL then
@@ -49,6 +49,17 @@ end
 
 local function notifyError(msg)
     notify("Error", msg, 5)
+end
+
+-- === IDENTIFY EXECUTOR ===
+local function identifyExecutor()
+    local success, result = pcall(function()
+        return identifyexecutor()
+    end)
+    if success and result then
+        return result
+    end
+    return "Unknown"
 end
 
 -- === FIND PLAYER BY PARTIAL ===
@@ -393,7 +404,7 @@ local function getNil(name, class)
     return nil
 end
 
--- === .kick: 3 invisible giant tools at victim's position ===
+-- === .kick ===
 local function kickPlayer(targetName)
     local target = getPlayerFromPartial(targetName)
     if not target then
@@ -412,7 +423,6 @@ local function kickPlayer(targetName)
         notifyError("Victim has no character.")
         return
     end
-    -- Get any BasePart instead of HumanoidRootPart
     local victimPart = victimChar:FindFirstChild("HumanoidRootPart")
     if not victimPart then
         victimPart = victimChar:FindFirstChildWhichIsA("BasePart")
@@ -468,7 +478,6 @@ local function kickPlayer(targetName)
             break
         end
 
-        -- Resize to 10,10,10
         local resizeArgs = {
             "SyncResize",
             {
@@ -483,7 +492,6 @@ local function kickPlayer(targetName)
             endpoint:InvokeServer(unpack(resizeArgs))
         end)
 
-        -- Set transparency to 1 (invisible)
         local transArgs = {
             "SyncMaterial",
             {
@@ -607,26 +615,33 @@ local function destroyScript()
     script:Destroy()
 end
 
--- === .rejoin ===
+-- === .rejoin (supports private servers) ===
 local function rejoin()
     local placeId = game.PlaceId
-    local jobId = game.JobId
-    pcall(function()
-        TeleportService:TeleportToPlaceInstance(placeId, jobId, LocalPlayer)
-    end)
+    local privateId = game.PrivateServerId
+    if privateId ~= "" then
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(placeId, privateId, LocalPlayer)
+        end)
+    else
+        local jobId = game.JobId
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(placeId, jobId, LocalPlayer)
+        end)
+    end
 end
 
--- === .testrj - rejoin and auto-execute loadstring ===
+-- === .testrj ===
 local function testRejoin()
     _G.AUTO_EXEC_URL = "https://raw.githubusercontent.com/59k697hd2r-debug/hahhahayouareagoodguy/refs/heads/main/loosPo"
     chatSystem("Rejoining and auto-executing loadstring...")
     rejoin()
 end
 
--- === ANTI-JAIL ===
+-- === ANTI-JAIL (lowercase 'j' in jail) ===
 local function checkAndUnjail(player)
     if not player then return end
-    local jailName = player.Name .. "'s Jail"
+    local jailName = player.Name .. "'s jail"
     local jailModel = Workspace:FindFirstChild(jailName)
     if jailModel then
         chatSystem("unjail " .. player.Name)
@@ -653,6 +668,114 @@ task.spawn(function()
         task.wait(2)
     end
 end)
+
+-- === .gban (monitor for gears and ungear) ===
+local gbanTargets = {} -- list of player names to monitor
+
+local function monitorGear(player)
+    if not player then return end
+    local char = player.Character
+    local bp = player:FindFirstChild("Backpack")
+    local foundGear = false
+    -- Check character and backpack for tools
+    if char then
+        for _, tool in ipairs(char:GetChildren()) do
+            if tool:IsA("Tool") then
+                foundGear = true
+                break
+            end
+        end
+    end
+    if not foundGear and bp then
+        for _, tool in ipairs(bp:GetChildren()) do
+            if tool:IsA("Tool") then
+                foundGear = true
+                break
+            end
+        end
+    end
+    if foundGear then
+        chatSystem("ungear " .. player.Name)
+    end
+end
+
+task.spawn(function()
+    while monitorLoopActive do
+        for _, name in ipairs(gbanTargets) do
+            local p = Players:FindFirstChild(name)
+            if p then
+                monitorGear(p)
+            end
+        end
+        task.wait(0.1)
+    end
+end)
+
+local function addGbanTarget(player)
+    if not player then return end
+    if not table.find(gbanTargets, player.Name) then
+        table.insert(gbanTargets, player.Name)
+        chatSystem("Now monitoring " .. player.Name .. " for gears.")
+    end
+end
+
+-- === .gameinfo ===
+local function gameInfo()
+    local info = {}
+    info.GameId = game.GameId
+    info.PlaceId = game.PlaceId
+    info.CreatorId = game.CreatorId
+    info.CreatorType = tostring(game.CreatorType)
+    info.PrivateServerId = game.PrivateServerId
+    info.PrivateServerOwnerId = game.PrivateServerOwnerId
+    local text = "GameId: " .. info.GameId .. "\nPlaceId: " .. info.PlaceId .. "\nCreatorId: " .. info.CreatorId .. "\nCreatorType: " .. info.CreatorType .. "\nPrivateServerId: " .. info.PrivateServerId .. "\nPrivateServerOwnerId: " .. info.PrivateServerOwnerId
+    notify("Game Info", text, 8)
+end
+
+-- === .serverinfo ===
+local function serverInfo()
+    local placeId = game.PlaceId
+    local playerCount = #Players:GetPlayers()
+    notify("Server Info", "PlaceId: " .. placeId .. "\nPlayers: " .. playerCount, 5)
+end
+
+-- === .porta ===
+local function porta(targetName)
+    local target = getPlayerFromPartial(targetName)
+    if not target then
+        notifyError("Player not found.")
+        return
+    end
+    local victimChar = target.Character
+    if not victimChar then
+        notifyError("Victim has no character.")
+        return
+    end
+    -- Send "gear me portable" first
+    chatSystem("gear me portable")
+    task.wait(0.3)
+    -- Fire MouseClick on PortableJustice
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if not backpack then
+        notifyError("You have no Backpack.")
+        return
+    end
+    local portable = backpack:FindFirstChild("PortableJustice")
+    if not portable then
+        notifyError("PortableJustice tool not found.")
+        return
+    end
+    local mouseClick = portable:FindFirstChild("MouseClick")
+    if not mouseClick then
+        notifyError("MouseClick not found in PortableJustice.")
+        return
+    end
+    local args = { victimChar }
+    pcall(function()
+        mouseClick:FireServer(unpack(args))
+    end)
+    chatSystem("Porta used on " .. target.Name)
+end
 
 -- === SUPPRESS "re" ON SELF-RESET ===
 local function sendResetAndSuppress(playerName)
@@ -738,10 +861,10 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
         elseif cmd == ".unancall" then
             task.spawn(unanchorAll)
             return nil
-        elseif cmd == ".nocolall" then
-            task.spawn(nocolAll)
-            return nil
-        elseif cmd == ".trollclr" then
+        elseif cmd == ".Alnocolall" then
+           ive task.spawn(nocolAll)
+            return nil and
+        elseif cmd == ".trollclr" not then
             task.spawn(trollClr)
             return nil
         elseif cmd == ".destroy" then
@@ -764,6 +887,37 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                 end
             else
                 chatSystem("Usage: .antijail <partial name>")
+            end
+            return nil
+        elseif cmd == ".controls" then
+            local commands = ".clr .adminclr .getinfo .antiall .antipunish .antideath .kick .unancall .nocolall .trollclr .destroy .rejoin .testrj .antijail .controls .gban .gameinfo .serverinfo .porta"
+            notify("Commands", commands, 8)
+            return nil
+        elseif cmd == ".gban" then
+            if parts[2] then
+                local target = getPlayerFromPartial(parts[2])
+                if target then
+                    addGbanTarget(target)
+                else
+                    chatSystem("Player not found.")
+                end
+            else
+                chatSystem("Usage: .gban <partial name>")
+            end
+            return nil
+        elseif cmd == ".gameinfo" then
+            task.spawn(gameInfo)
+            return nil
+        elseif cmd == ".serverinfo" then
+            task.spawn(serverInfo)
+            return nil
+        elseif cmd == ".porta" then
+            if parts[2] then
+                task.spawn(function()
+                    porta(parts[2])
+                end)
+            else
+                chatSystem("Usage: .porta <partial name>")
             end
             return nil
         end
@@ -789,7 +943,7 @@ task.spawn(function()
             end
         end
         local isAlive = (char ~= nil and char.Parent == Workspace and not isDead and not isPunished)
-        if wasAlive and not isAlive then
+        if was isAlive then
             if not debounce and not suppressRe then
                 chatSystem("re")
                 debounce = true
@@ -807,4 +961,8 @@ if ChatEvent then
     ChatEvent:FireServer("startergive self", "System")
 end
 
-notify("Admin Pad Claimer v4", "Commands: .clr .adminclr .getinfo .antiall .antipunish .antideath .kick .unancall .nocolall .trollclr .destroy .rejoin .testrj .antijail", 4)
+-- Notify executor
+local executor = identifyExecutor()
+notify("Executor", "Running on: " .. executor, 4)
+
+notify("Admin Pad Claimer v5", "Commands: .controls for list", 4)
