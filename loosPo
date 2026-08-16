@@ -370,11 +370,11 @@ if terrain then
                         end)
                         _G.ADMIN_GUI = sg
                     end)
-                end
-            end
-        end
-    end
-end
+                end -- if #padChildren
+            end -- if pads
+        end -- if adminFolder
+    end -- if gameFolder
+end -- if terrain
 
 -- === EQUIP TOOLS ===
 local function equipAdminTool()
@@ -670,14 +670,13 @@ task.spawn(function()
 end)
 
 -- === .gban (monitor for gears and ungear) ===
-local gbanTargets = {} -- list of player names to monitor
+local gbanTargets = {}
 
 local function monitorGear(player)
     if not player then return end
     local char = player.Character
     local bp = player:FindFirstChild("Backpack")
     local foundGear = false
-    -- Check character and backpack for tools
     if char then
         for _, tool in ipairs(char:GetChildren()) do
             if tool:IsA("Tool") then
@@ -751,10 +750,8 @@ local function porta(targetName)
         notifyError("Victim has no character.")
         return
     end
-    -- Send "gear me portable" first
     chatSystem("gear me portable")
     task.wait(0.3)
-    -- Fire MouseClick on PortableJustice
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     if not backpack then
         notifyError("You have no Backpack.")
@@ -861,10 +858,10 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
         elseif cmd == ".unancall" then
             task.spawn(unanchorAll)
             return nil
-        elseif cmd == ".Alnocolall" then
-           ive task.spawn(nocolAll)
-            return nil and
-        elseif cmd == ".trollclr" not then
+        elseif cmd == ".nocolall" then
+            task.spawn(nocolAll)
+            return nil
+        elseif cmd == ".trollclr" then
             task.spawn(trollClr)
             return nil
         elseif cmd == ".destroy" then
@@ -920,10 +917,10 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                 chatSystem("Usage: .porta <partial name>")
             end
             return nil
-        end
-    end
+        end -- end of if cmd == ... block
+    end -- end of if self == ChatEvent ...
     return old and old(self, ...)
-end)
+end) -- end of hookmetamethod
 
 -- === CHARACTER MONITOR ===
 local wasAlive = true
@@ -943,7 +940,7 @@ task.spawn(function()
             end
         end
         local isAlive = (char ~= nil and char.Parent == Workspace and not isDead and not isPunished)
-        if was isAlive then
+        if wasAlive and not isAlive then
             if not debounce and not suppressRe then
                 chatSystem("re")
                 debounce = true
@@ -961,8 +958,6 @@ if ChatEvent then
     ChatEvent:FireServer("startergive self", "System")
 end
 
--- Notify executor
 local executor = identifyExecutor()
 notify("Executor", "Running on: " .. executor, 4)
-
 notify("Admin Pad Claimer v5", "Commands: .controls for list", 4)
