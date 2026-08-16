@@ -1,9 +1,9 @@
--- ===== VERSION 28: FIXED CREATE COLUMN ERROR =====
-if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 28 then
+-- ===== VERSION 30: FINAL FIXED SCRIPT – POPUP FOR JOIN FRIEND =====
+if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 30 then
     script:Destroy()
     return
 end
-_G.ADMIN_SCRIPT_VERSION = 28
+_G.ADMIN_SCRIPT_VERSION = 30
 
 -- === ALLOWED GAME/PLACE IDs ===
 local ALLOWED_GAME_IDS = {}
@@ -131,7 +131,7 @@ end
 -- ========================================
 local window = Rayfield:CreateWindow({
     name = "Admin Pad Claimer",
-    subtitle = "v28 - Fixed UI",
+    subtitle = "v30 - Final",
 })
 
 -- === NOTIFICATION ===
@@ -226,7 +226,6 @@ local function updateFriends()
         end
     end
     friendsInGame = newFriendsInGame
-    -- Update friends dropdown if exists
     if friendsDropdown then
         local options = {}
         for _, friendId in ipairs(friendsInGame) do
@@ -1644,40 +1643,52 @@ mainTab:CreateInput({
     end,
 })
 
--- === FRIENDS TAB (no group, just elements on tab) ===
+-- === FRIENDS TAB ===
 local friendsTab = window:CreateTab({
     name = "Friends",
     icon = ICONS.friends,
 })
 
--- Place dropdown directly on tab (it will be in a column automatically)
 local friendsDropdown = friendsTab:CreateDropdown({
     name = "Join Friend",
     multiSelect = false,
     options = { "Loading friends..." },
     callback = function(selected)
-        if selected and #selected > 0 then
-            local selectedStr = selected[1]
-            if selectedStr == "No friends in this game" or selectedStr == "Loading friends..." then return end
-            local userId = string.match(selectedStr, "%((%d+)%)")
-            if userId then
-                local friendUserId = tonumber(userId)
-                local success, userPresent, friendPlaceId, friendJobId = pcall(function()
-                    return TeleportService:GetPlayerPlaceInstanceAsync(friendUserId)
-                end)
-                if success and userPresent and friendPlaceId == game.PlaceId then
-                    pcall(function()
-                        TeleportService:TeleportToPlaceInstance(friendPlaceId, friendJobId, LocalPlayer)
-                    end)
-                else
-                    notify("Join Friend", "Friend not in this game or unavailable.", 3)
-                end
-            end
+        -- Guard against nil or empty
+        if not selected or #selected == 0 then return end
+        local selectedStr = selected[1]
+        if not selectedStr or selectedStr == "No friends in this game" or selectedStr == "Loading friends..." then return end
+        local userId = string.match(selectedStr, "%((%d+)%)")
+        if userId then
+            local friendUserId = tonumber(userId)
+            -- Show popup confirmation
+            window:Popup({
+                title = "Join Friend",
+                content = "Do you want to join " .. selectedStr:gsub("%s%(.-%)$", "") .. "?",
+                options = {
+                    { text = "Cancel" },
+                    {
+                        text = "Join",
+                        style = "primary",
+                        callback = function()
+                            local success, userPresent, friendPlaceId, friendJobId = pcall(function()
+                                return TeleportService:GetPlayerPlaceInstanceAsync(friendUserId)
+                            end)
+                            if success and userPresent and friendPlaceId == game.PlaceId then
+                                pcall(function()
+                                    TeleportService:TeleportToPlaceInstance(friendPlaceId, friendJobId, LocalPlayer)
+                                end)
+                            else
+                                notify("Join Friend", "Friend not in this game or unavailable.", 3)
+                            end
+                        end
+                    },
+                },
+            })
         end
     end,
 })
 
--- Add refresh button
 friendsTab:CreateButton({
     name = "Refresh Friends List",
     callback = function()
@@ -1686,7 +1697,6 @@ friendsTab:CreateButton({
     end,
 })
 
--- Initial fill
 task.spawn(function()
     task.wait(2)
     updateFriends()
@@ -1844,7 +1854,6 @@ local playersStat = infoGroup:CreateStat({
     value = #Players:GetPlayers(),
 })
 
--- User info as a button
 local userGroup = infoTab:CreateGroup({
     name = "Script User",
 })
@@ -2024,7 +2033,6 @@ task.spawn(function()
         jailStat:Set(stats.playersJailed)
         protectedStat:Set(stats.playersProtected)
         playersStat:Set(#Players:GetPlayers())
-        -- Update user button text
         local friendText = ""
         if table.find(friendsInGame, LocalPlayer.UserId) then
             friendText = " (Friend)"
@@ -2427,4 +2435,4 @@ notify("Executor", "Running on: " .. executor, 4)
 
 local displayName = LocalPlayer.DisplayName or LocalPlayer.Name
 notify("Welcome", "Welcome " .. displayName .. "!", 4)
-notify("Admin Pad Claimer v28", "Type .controls for command list or use UI.", 4)
+notify("Admin Pad Claimer v30", "Type .controls for command list or use UI.", 4)
