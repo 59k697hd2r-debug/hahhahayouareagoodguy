@@ -1,9 +1,9 @@
--- ===== VERSION 34: FIXED FRIENDS DROPDOWN WITH DEBUG =====
-if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 34 then
+-- ===== VERSION 35: FIXED DROPDOWN SET METHOD =====
+if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 35 then
     script:Destroy()
     return
 end
-_G.ADMIN_SCRIPT_VERSION = 34
+_G.ADMIN_SCRIPT_VERSION = 35
 
 -- === ALLOWED GAME/PLACE IDs ===
 local ALLOWED_GAME_IDS = {}
@@ -85,7 +85,7 @@ local antiFreezeActive = false
 local afkActive = false
 local autoClaimEnabled = true
 local padClaimerThread = nil
-local friendsInGame = {}  -- list of player objects who are friends and in the server
+local friendsInGame = {}
 local chatCommandsEnabled = true
 
 -- === LOOP STATE ===
@@ -132,7 +132,7 @@ end
 -- ========================================
 local window = Rayfield:CreateWindow({
     name = "Admin Pad Claimer",
-    subtitle = "v34 - Friends Fixed",
+    subtitle = "v35 - Fixed Dropdown",
 })
 
 -- === NOTIFICATION ===
@@ -190,12 +190,11 @@ Players.PlayerRemoving:Connect(toastLeave)
 -- ========================================
 -- === FRIEND TRACKING (USING IsFriendsWith) ===
 -- ========================================
-local friendsDropdown = nil  -- will be assigned later
+local friendsDropdown = nil
 
 local function updateFriends()
     local localPlayer = LocalPlayer
     local currentFriends = {}
-    -- Iterate over all players in the server
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= localPlayer then
             local success, isFriend = pcall(function()
@@ -206,7 +205,6 @@ local function updateFriends()
             end
         end
     end
-    -- Check for newly joined friends (toast)
     for _, friend in ipairs(currentFriends) do
         local alreadyTracked = false
         for _, tracked in ipairs(friendsInGame) do
@@ -224,7 +222,6 @@ local function updateFriends()
         end
     end
     friendsInGame = currentFriends
-    -- Update dropdown
     if friendsDropdown then
         local options = {}
         for _, friend in ipairs(friendsInGame) do
@@ -234,15 +231,18 @@ local function updateFriends()
             table.insert(options, "No friends in this game")
         end
         local success, err = pcall(function()
-            friendsDropdown:SetOptions(options)
+            -- FIX: use :Set() instead of :SetOptions()
+            if friendsDropdown.Set then
+                friendsDropdown:Set(options)
+            elseif friendsDropdown.Update then
+                friendsDropdown:Update(options)
+            else
+                error("No method to set dropdown options")
+            end
         end)
         if not success then
             warn("Failed to set friends dropdown options:", err)
-        else
-            print("Friends dropdown updated with", #options, "options")
         end
-    else
-        print("friendsDropdown is nil, cannot update")
     end
 end
 
@@ -1696,7 +1696,6 @@ friendsTab:CreateButton({
 -- === START FRIEND UPDATE LOOP (after UI) ===
 -- ========================================
 task.spawn(function()
-    -- Wait a bit for UI to settle
     task.wait(1)
     while monitorLoopActive do
         updateFriends()
@@ -2447,4 +2446,4 @@ notify("Executor", "Running on: " .. executor, 4)
 
 local displayName = LocalPlayer.DisplayName or LocalPlayer.Name
 notify("Welcome", "Welcome " .. displayName .. "!", 4)
-notify("Admin Pad Claimer v34", "Type .controls for command list or use UI.", 4)
+notify("Admin Pad Claimer v35", "Type .controls for command list or use UI.", 4)
