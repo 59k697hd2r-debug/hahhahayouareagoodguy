@@ -1,9 +1,9 @@
--- ===== VERSION 54: CRASH COMMAND, HEALTH CHECK, 0.5s DELAY, REJOIN BAN =====
-if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 54 then
+-- ===== VERSION 56: CRASH FRIEND CHOICE, FIXED WAITS =====
+if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 56 then
     script:Destroy()
     return
 end
-_G.ADMIN_SCRIPT_VERSION = 54
+_G.ADMIN_SCRIPT_VERSION = 56
 
 -- === PROTECTED USERS ===
 if not _G.PROTECTED_PLAYERS then
@@ -147,7 +147,7 @@ local function isRecentlyCrashed(player)
     if not player then return false end
     local ts = recentlyCrashed[player.UserId]
     if not ts then return false end
-    if (tick() - ts) > 30 then  -- 30 second cooldown
+    if (tick() - ts) > 30 then
         recentlyCrashed[player.UserId] = nil
         return false
     end
@@ -410,7 +410,8 @@ local function getPlayerFromPartial(partial)
     return nil
 end
 
-local function resolvePlayerInput(input, callback)
+-- resolvePlayerInput now accepts friendChoice (boolean) for "random" and "all"
+local function resolvePlayerInput(input, callback, friendChoice)
     if not input or input == "" then
         notifyError("No target specified")
         return
@@ -419,79 +420,86 @@ local function resolvePlayerInput(input, callback)
         notifyError("Internal error: callback is not a function")
         return
     end
-    if input == "random" then
-        local hasFriends = (#friendsInGame > 0)
-        if hasFriends then
-            local function pickRandom(includeFriends)
-                local players = Players:GetPlayers()
-                local candidates = {}
-                for _, p in ipairs(players) do
-                    if p ~= LocalPlayer and not isProtected(p) then
-                        if includeFriends then
-                            table.insert(candidates, p)
-                        else
-                            local isFriend = false
-                            for _, f in ipairs(friendsInGame) do
-                                if f == p then
-                                    isFriend = true
-                                    break
-                                end
-                            end
-                            if not isFriend then
-                                table.insert(candidates, p)
-                            end
-                        end
+
+    local function getTargets(includeFriends)
+        local players = Players:GetPlayers()
+        local targets = {}
+        for _, p in ipairs(players) do
+            if p == LocalPlayer then continue end
+            if isProtected(p) then continue end
+            if not includeFriends then
+                local isFriend = false
+                for _, f in ipairs(friendsInGame) do
+                    if f == p then
+                        isFriend = true
+                        break
                     end
                 end
-                if #candidates == 0 then
-                    notifyError("No eligible players found")
-                    return
-                end
-                local chosen = candidates[math.random(1, #candidates)]
-                if callback then callback({ chosen }) else notifyError("Callback nil") end
+                if isFriend then continue end
             end
+            table.insert(targets, p)
+        end
+        return targets
+    end
+
+    if input == "random" then
+        local function pickRandom(includeFriends)
+            local targets = getTargets(includeFriends)
+            if #targets == 0 then
+                notifyError("No eligible players found")
+                return
+            end
+            local chosen = targets[math.random(1, #targets)]
+            if callback then callback({ chosen }) else notifyError("Callback nil") end
+        end
+
+        if friendChoice then
+            -- ask user
             pcall(function()
                 window:Popup({
                     title = "Random Target",
-                    content = "You have friends in this server. Do you want to include them as possible targets?",
+                    content = "Do you want to include your friends as possible targets?",
                     options = {
                         { text = "No (exclude friends)", callback = function() pickRandom(false) end },
-                        { text = "Yes (include anyone)", style = "primary", callback = function() pickRandom(true) end },
+                        { text = "Yes (include friends)", style = "primary", callback = function() pickRandom(true) end },
                     },
                 })
             end)
         else
-            local players = Players:GetPlayers()
-            local candidates = {}
-            for _, p in ipairs(players) do
-                if p ~= LocalPlayer and not isProtected(p) then
-                    table.insert(candidates, p)
-                end
-            end
-            if #candidates == 0 then
+            -- no friend choice, just exclude friends (original behavior)
+            pickRandom(false)
+        end
+        return
+    end
+
+    if input == "all" then
+        local function doAll(includeFriends)
+            local targets = getTargets(includeFriends)
+            if #targets == 0 then
                 notifyError("No other unprotected players in server")
                 return
             end
-            local chosen = candidates[math.random(1, #candidates)]
-            if callback then callback({ chosen }) else notifyError("Callback nil") end
+            if callback then callback(targets) else notifyError("Callback nil") end
+        end
+
+        if friendChoice then
+            pcall(function()
+                window:Popup({
+                    title = "All Target",
+                    content = "Do you want to include your friends in the target list?",
+                    options = {
+                        { text = "No (exclude friends)", callback = function() doAll(false) end },
+                        { text = "Yes (include friends)", style = "primary", callback = function() doAll(true) end },
+                    },
+                })
+            end)
+        else
+            doAll(false) -- default exclude friends
         end
         return
     end
-    if input == "all" then
-        local players = Players:GetPlayers()
-        local targets = {}
-        for _, p in ipairs(players) do
-            if p ~= LocalPlayer and not isProtected(p) then
-                table.insert(targets, p)
-            end
-        end
-        if #targets == 0 then
-            notifyError("No other unprotected players in server")
-            return
-        end
-        if callback then callback(targets) else notifyError("Callback nil") end
-        return
-    end
+
+    -- specific player name
     local target = getPlayerFromPartial(input)
     if target then
         if callback then callback({ target }) else notifyError("Callback nil") end
@@ -1130,7 +1138,7 @@ local function removeGearbanTarget(player)
 end
 
 -- ========================================
--- === CRASH (formerly kick) FUNCTION ===
+-- === CRASH FUNCTION ===
 -- ========================================
 local function crashPlayer(player)
     if not player then return end
@@ -1157,7 +1165,6 @@ local function crashPlayer(player)
     if humanoid and humanoid.Health <= 0 then
         chatSystem("respawn " .. player.Name)
         task.wait(0.2)
-        -- re-fetch character after respawn
         victimChar = player.Character
         if not victimChar then
             notifyError(player.Name .. " still no character after respawn")
@@ -1311,7 +1318,6 @@ local function banPlayer(player)
         return
     end
     bannedPlayers[userId] = { name = player.Name, displayName = player.DisplayName }
-    -- Crash them immediately
     crashPlayer(player)
     notify("Ban", "Banned and crashed " .. player.Name .. " (" .. userId .. ")", 3)
 end
@@ -1336,10 +1342,9 @@ local function unbanPlayer(userIdOrName)
     end
 end
 
--- Rejoin ban enforcement: on player add, if banned, crash once
 Players.PlayerAdded:Connect(function(player)
     if bannedPlayers[player.UserId] then
-        task.wait(1)  -- wait a bit for player to fully load
+        task.wait(1)
         crashPlayer(player)
         notify("Ban Enforcement", "Crashed banned player on rejoin: " .. player.Name, 3)
     end
@@ -1605,6 +1610,7 @@ local mainTab = window:CreateTab({
     icon = ICONS.main,
 })
 
+-- Crash input with friend choice (true)
 mainTab:CreateInput({
     name = "Crash Player",
     placeholder = "Enter player name, random, or all",
@@ -1612,10 +1618,10 @@ mainTab:CreateInput({
         if text and text ~= "" then
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
-                    task.wait(i > 1 and 0.5)  -- 0.5s delay between multiple targets
+                    if i > 1 then task.wait(0.5) end
                     crashPlayer(player)
                 end
-            end)
+            end, true)  -- friendChoice = true
         end
     end,
 })
@@ -1627,13 +1633,13 @@ mainTab:CreateInput({
         if text and text ~= "" then
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
-                    task.wait(i > 1 and 0.5)
+                    if i > 1 then task.wait(0.5) end
                     if not checkProtected(player) then
                         addGearbanTarget(player)
                         notify("Gearban", "Now monitoring " .. player.Name .. " for gears", 3)
                     end
                 end
-            end)
+            end, false) -- no friend choice for gearban
         end
     end,
 })
@@ -1645,13 +1651,13 @@ mainTab:CreateInput({
         if text and text ~= "" then
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
-                    task.wait(i > 1 and 0.5)
+                    if i > 1 then task.wait(0.5) end
                     if not checkProtected(player) then
                         removeGearbanTarget(player)
                         notify("Ungearban", "Stopped monitoring " .. player.Name, 3)
                     end
                 end
-            end)
+            end, false)
         end
     end,
 })
@@ -1663,10 +1669,10 @@ mainTab:CreateInput({
         if text and text ~= "" then
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
-                    task.wait(i > 1 and 0.5)
+                    if i > 1 then task.wait(0.5) end
                     porta(player.Name)
                 end
-            end)
+            end, false)
         end
     end,
 })
@@ -1678,10 +1684,10 @@ mainTab:CreateInput({
         if text and text ~= "" then
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
-                    task.wait(i > 1 and 0.5)
+                    if i > 1 then task.wait(0.5) end
                     banPlayer(player)
                 end
-            end)
+            end, false) -- ban uses crash but we don't need friend choice for ban? Actually ban uses crash internally, but the selection of targets for ban should also have friend choice? User didn't specify, but we can set true for ban as well if they want. For consistency, we set false.
         end
     end,
 })
@@ -1703,11 +1709,11 @@ mainTab:CreateInput({
         if text and text ~= "" then
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
-                    task.wait(i > 1 and 0.5)
+                    if i > 1 then task.wait(0.5) end
                     addProtectedPlayer(player)
                     notify("Anti-Jail", "Anti-jail enabled for " .. player.Name, 3)
                 end
-            end)
+            end, false)
         end
     end,
 })
@@ -1719,11 +1725,11 @@ mainTab:CreateInput({
         if text and text ~= "" then
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
-                    task.wait(i > 1 and 0.5)
+                    if i > 1 then task.wait(0.5) end
                     removeProtectedPlayer(player)
                     notify("Anti-Jail Removed", "Anti-jail removed for " .. player.Name, 3)
                 end
-            end)
+            end, false)
         end
     end,
 })
@@ -1735,12 +1741,12 @@ mainTab:CreateInput({
         if text and text ~= "" then
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
-                    task.wait(i > 1 and 0.5)
+                    if i > 1 then task.wait(0.5) end
                     if not checkProtected(player) then
                         enableAntiPunish(player)
                     end
                 end
-            end)
+            end, false)
         end
     end,
 })
@@ -1752,12 +1758,12 @@ mainTab:CreateInput({
         if text and text ~= "" then
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
-                    task.wait(i > 1 and 0.5)
+                    if i > 1 then task.wait(0.5) end
                     if not checkProtected(player) then
                         disableAntiPunish(player)
                     end
                 end
-            end)
+            end, false)
         end
     end,
 })
@@ -1769,12 +1775,12 @@ mainTab:CreateInput({
         if text and text ~= "" then
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
-                    task.wait(i > 1 and 0.5)
+                    if i > 1 then task.wait(0.5) end
                     if not checkProtected(player) then
                         enableAntiDeath(player)
                     end
                 end
-            end)
+            end, false)
         end
     end,
 })
@@ -1786,12 +1792,12 @@ mainTab:CreateInput({
         if text and text ~= "" then
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
-                    task.wait(i > 1 and 0.5)
+                    if i > 1 then task.wait(0.5) end
                     if not checkProtected(player) then
                         disableAntiDeath(player)
                     end
                 end
-            end)
+            end, false)
         end
     end,
 })
@@ -1803,12 +1809,12 @@ mainTab:CreateInput({
         if text and text ~= "" then
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
-                    task.wait(i > 1 and 0.5)
+                    if i > 1 then task.wait(0.5) end
                     if not checkProtected(player) then
                         enableAntiAll(player)
                     end
                 end
-            end)
+            end, false)
         end
     end,
 })
@@ -1820,12 +1826,12 @@ mainTab:CreateInput({
         if text and text ~= "" then
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
-                    task.wait(i > 1 and 0.5)
+                    if i > 1 then task.wait(0.5) end
                     if not checkProtected(player) then
                         disableAntiAll(player)
                     end
                 end
-            end)
+            end, false)
         end
     end,
 })
@@ -1837,14 +1843,14 @@ mainTab:CreateInput({
         if text and text ~= "" then
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
-                    task.wait(i > 1 and 0.5)
+                    if i > 1 then task.wait(0.5) end
                     if player then
                         local gamepassStr = getGamepassInfo(player)
                         local info = "Name: " .. player.Name .. " | Display: " .. player.DisplayName .. " | UserId: " .. player.UserId .. gamepassStr
                         notify("Player Info", info, 5)
                     end
                 end
-            end)
+            end, false)
         end
     end,
 })
@@ -1881,10 +1887,10 @@ mainTab:CreateInput({
         if text and text ~= "" then
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
-                    task.wait(i > 1 and 0.5)
+                    if i > 1 then task.wait(0.5) end
                     goAfk(player.Name)
                 end
-            end)
+            end, false)
         end
     end,
 })
@@ -1896,10 +1902,10 @@ mainTab:CreateInput({
         if text and text ~= "" then
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
-                    task.wait(i > 1 and 0.5)
+                    if i > 1 then task.wait(0.5) end
                     unAfk(player.Name)
                 end
-            end)
+            end, false)
         end
     end,
 })
@@ -2254,7 +2260,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
         local arg1 = parts[2]
         local arg2 = parts[3]
 
-        local function executeWithTargets(input, commandFunc, delay)
+        local function executeWithTargets(input, commandFunc, delay, friendChoice)
             if not input or input == "" then
                 chatSystem("Usage: " .. cmd .. " <player/random/all>")
                 return
@@ -2264,11 +2270,11 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     if delay and i > 1 then task.wait(delay) end
                     commandFunc(player)
                 end
-            end)
+            end, friendChoice or false)
         end
 
         local function handleCrash(input)
-            executeWithTargets(input, crashPlayer, 0.5)  -- 0.5s delay between targets
+            executeWithTargets(input, crashPlayer, 0.5, true)  -- friend choice enabled
         end
 
         local function handleGearban(input)
@@ -2277,7 +2283,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     addGearbanTarget(p)
                     chatSystem("Now monitoring " .. p.Name .. " for gears")
                 end
-            end, 0.5)
+            end, 0.5, false)
         end
 
         local function handleUngearban(input)
@@ -2286,31 +2292,31 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     removeGearbanTarget(p)
                     chatSystem("Stopped monitoring " .. p.Name .. " for gears")
                 end
-            end, 0.5)
+            end, 0.5, false)
         end
 
         local function handlePorta(input)
             executeWithTargets(input, function(p)
                 porta(p.Name)
-            end, 0.5)
+            end, 0.5, false)
         end
 
         local function handleBan(input)
-            executeWithTargets(input, banPlayer, 0.5)
+            executeWithTargets(input, banPlayer, 0.5, false)
         end
 
         local function handleAntiJail(input)
             executeWithTargets(input, function(p)
                 addProtectedPlayer(p)
                 chatSystem("Anti-jail enabled for " .. p.Name)
-            end, 0.5)
+            end, 0.5, false)
         end
 
         local function handleUnAntiJail(input)
             executeWithTargets(input, function(p)
                 removeProtectedPlayer(p)
                 chatSystem("Anti-jail removed from " .. p.Name)
-            end, 0.5)
+            end, 0.5, false)
         end
 
         local function handleAntiPunish(input)
@@ -2319,7 +2325,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     enableAntiPunish(p)
                     chatSystem("Anti-punish enabled for " .. p.Name)
                 end
-            end, 0.5)
+            end, 0.5, false)
         end
 
         local function handleUnAntiPunish(input)
@@ -2328,7 +2334,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     disableAntiPunish(p)
                     chatSystem("Anti-punish removed from " .. p.Name)
                 end
-            end, 0.5)
+            end, 0.5, false)
         end
 
         local function handleAntiDeath(input)
@@ -2337,7 +2343,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     enableAntiDeath(p)
                     chatSystem("Anti-death enabled for " .. p.Name)
                 end
-            end, 0.5)
+            end, 0.5, false)
         end
 
         local function handleUnAntiDeath(input)
@@ -2346,7 +2352,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     disableAntiDeath(p)
                     chatSystem("Anti-death removed from " .. p.Name)
                 end
-            end, 0.5)
+            end, 0.5, false)
         end
 
         local function handleAntiAll(input)
@@ -2355,7 +2361,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     sendResetAndSuppress(p.Name)
                     enableAntiAll(p)
                 end
-            end, 0.5)
+            end, 0.5, false)
         end
 
         local function handleUnAntiAll(input)
@@ -2364,19 +2370,19 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     disableAntiAll(p)
                     chatSystem("All protections removed from " .. p.Name)
                 end
-            end, 0.5)
+            end, 0.5, false)
         end
 
         local function handleAfk(input)
             executeWithTargets(input, function(p)
                 goAfk(p.Name)
-            end, 0.5)
+            end, 0.5, false)
         end
 
         local function handleUnAfk(input)
             executeWithTargets(input, function(p)
                 unAfk(p.Name)
-            end, 0.5)
+            end, 0.5, false)
         end
 
         -- Command routing
@@ -2392,7 +2398,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     local gamepassStr = getGamepassInfo(p)
                     local info = "Name: " .. p.Name .. " | Display: " .. p.DisplayName .. " | UserId: " .. p.UserId .. gamepassStr
                     notify("Player Info", info, 5)
-                end, 0.5)
+                end, 0.5, false)
             else
                 notify("Player Info", "Usage: .getinfo <player/random/all>", 3)
             end
@@ -2421,7 +2427,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
         elseif cmd == ".unantijail" then
             if arg1 then handleUnAntiJail(arg1) else chatSystem("Usage: .unantijail <player/random/all>") end
             return nil
-        elseif cmd == ".crash" or cmd == ".kick" then  -- accept both for compatibility
+        elseif cmd == ".crash" or cmd == ".kick" then
             if arg1 then handleCrash(arg1) else chatSystem("Usage: .crash <player/random/all>") end
             return nil
         elseif cmd == ".unancall" then
@@ -2509,22 +2515,21 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             if arg1 then
                 executeWithTargets(arg1, function(p)
                     if not checkProtected(p) then chatSystem("freeze " .. p.Name) end
-                end, 0.5)
+                end, 0.5, false)
             else chatSystem("Usage: .freeze <player/random/all>") end
             return nil
         elseif cmd == ".thaw" then
             if arg1 then
                 executeWithTargets(arg1, function(p)
                     if not checkProtected(p) then chatSystem("thaw " .. p.Name) end
-                end, 0.5)
+                end, 0.5, false)
             else chatSystem("Usage: .thaw <player/random/all>") end
             return nil
-
         elseif cmd == ".blind" then
             if arg1 then
                 executeWithTargets(arg1, function(p)
                     if not checkProtected(p) then chatSystem("blind " .. p.Name) end
-                end, 0.5)
+                end, 0.5, false)
             else chatSystem("Usage: .blind <player/random/all>") end
             return nil
         elseif cmd == ".size" then
@@ -2557,7 +2562,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             if arg1 then
                 executeWithTargets(arg1, function(p)
                     if not checkProtected(p) then chatSystem("reset " .. p.Name) end
-                end, 0.5)
+                end, 0.5, false)
             else chatSystem("Usage: .reset <player/random/all>") end
             return nil
         end
