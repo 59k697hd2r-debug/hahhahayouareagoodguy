@@ -1,9 +1,9 @@
--- ===== VERSION 56: CRASH FRIEND CHOICE, FIXED WAITS =====
-if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 56 then
+-- ===== VERSION 57: CRASH SKIP ONLY FOR ALL, REPLACE RESET WITH UNGEAR, FLASHIFY, NAME [CRASHED] =====
+if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 57 then
     script:Destroy()
     return
 end
-_G.ADMIN_SCRIPT_VERSION = 56
+_G.ADMIN_SCRIPT_VERSION = 57
 
 -- === PROTECTED USERS ===
 if not _G.PROTECTED_PLAYERS then
@@ -137,7 +137,7 @@ local GAMEPASS_PERSONS_ADMIN = 1032786574
 -- === BANNED PLAYERS ===
 local bannedPlayers = {}
 
--- === RECENTLY CRASHED (avoid duplicate targeting) ===
+-- === RECENTLY CRASHED (used only for skip when "all") ===
 local recentlyCrashed = {}
 local function markCrashed(player)
     if not player then return end
@@ -410,8 +410,8 @@ local function getPlayerFromPartial(partial)
     return nil
 end
 
--- resolvePlayerInput now accepts friendChoice (boolean) for "random" and "all"
-local function resolvePlayerInput(input, callback, friendChoice)
+-- resolvePlayerInput: now accepts skipCrashed (boolean) to filter out recently crashed for "all"
+local function resolvePlayerInput(input, callback, friendChoice, skipCrashed)
     if not input or input == "" then
         notifyError("No target specified")
         return
@@ -421,12 +421,13 @@ local function resolvePlayerInput(input, callback, friendChoice)
         return
     end
 
-    local function getTargets(includeFriends)
+    local function getTargets(includeFriends, skipCrashed)
         local players = Players:GetPlayers()
         local targets = {}
         for _, p in ipairs(players) do
             if p == LocalPlayer then continue end
             if isProtected(p) then continue end
+            if skipCrashed and isRecentlyCrashed(p) then continue end
             if not includeFriends then
                 local isFriend = false
                 for _, f in ipairs(friendsInGame) do
@@ -444,7 +445,8 @@ local function resolvePlayerInput(input, callback, friendChoice)
 
     if input == "random" then
         local function pickRandom(includeFriends)
-            local targets = getTargets(includeFriends)
+            -- For random, we NEVER skip crashed players (skipCrashed is ignored)
+            local targets = getTargets(includeFriends, false)
             if #targets == 0 then
                 notifyError("No eligible players found")
                 return
@@ -454,7 +456,6 @@ local function resolvePlayerInput(input, callback, friendChoice)
         end
 
         if friendChoice then
-            -- ask user
             pcall(function()
                 window:Popup({
                     title = "Random Target",
@@ -466,7 +467,6 @@ local function resolvePlayerInput(input, callback, friendChoice)
                 })
             end)
         else
-            -- no friend choice, just exclude friends (original behavior)
             pickRandom(false)
         end
         return
@@ -474,7 +474,7 @@ local function resolvePlayerInput(input, callback, friendChoice)
 
     if input == "all" then
         local function doAll(includeFriends)
-            local targets = getTargets(includeFriends)
+            local targets = getTargets(includeFriends, skipCrashed or false)
             if #targets == 0 then
                 notifyError("No other unprotected players in server")
                 return
@@ -494,7 +494,7 @@ local function resolvePlayerInput(input, callback, friendChoice)
                 })
             end)
         else
-            doAll(false) -- default exclude friends
+            doAll(false)
         end
         return
     end
@@ -1138,15 +1138,11 @@ local function removeGearbanTarget(player)
 end
 
 -- ========================================
--- === CRASH FUNCTION ===
+-- === CRASH FUNCTION (no skip inside, skip handled by caller) ===
 -- ========================================
 local function crashPlayer(player)
     if not player then return end
     if checkProtected(player) then return end
-    if isRecentlyCrashed(player) then
-        notify("Crash", player.Name .. " was recently crashed, skipping", 3)
-        return
-    end
     equipBuildingTools()
     local endpoint = getSyncAPI()
     if not endpoint then
@@ -1199,7 +1195,7 @@ local function crashPlayer(player)
     chatSystem("blind " .. victimName)
     chatSystem("size " .. victimName .. " nan")
     chatSystem("smoke " .. victimName)
-    chatSystem("shiny " .. victimName)
+    chatSystem("flashify " .. victimName)          -- changed from "shiny" to "flashify"
     chatSystem("freeze me")
 
     for i = 1, 8 do
@@ -1301,10 +1297,14 @@ local function crashPlayer(player)
     chatSystem("thaw me")
     stats.playersKicked = stats.playersKicked + 1
     markCrashed(player)
+
+    -- New: Set victim's name to include [CRASHED]
+    chatSystem("name " .. victimName .. " [CRASHED]")
+
     notify("Crash", "Crashed " .. victimName .. " with " .. #swords .. " swords", 4)
 
     task.wait(1)
-    chatSystem("reset " .. victimName)
+    chatSystem("ungear " .. victimName)   -- replaced "reset" with "ungear"
     chatSystem("crash " .. victimName)
 end
 
@@ -1610,18 +1610,19 @@ local mainTab = window:CreateTab({
     icon = ICONS.main,
 })
 
--- Crash input with friend choice (true)
+-- Crash input with friend choice and skipCrashed based on input
 mainTab:CreateInput({
     name = "Crash Player",
     placeholder = "Enter player name, random, or all",
     callback = function(text)
         if text and text ~= "" then
+            local skip = (string.lower(text) == "all")  -- only skip for "all"
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
                     if i > 1 then task.wait(0.5) end
                     crashPlayer(player)
                 end
-            end, true)  -- friendChoice = true
+            end, true, skip)  -- friendChoice true, skipCrashed based on input
         end
     end,
 })
@@ -1639,7 +1640,7 @@ mainTab:CreateInput({
                         notify("Gearban", "Now monitoring " .. player.Name .. " for gears", 3)
                     end
                 end
-            end, false) -- no friend choice for gearban
+            end, false, false)
         end
     end,
 })
@@ -1657,7 +1658,7 @@ mainTab:CreateInput({
                         notify("Ungearban", "Stopped monitoring " .. player.Name, 3)
                     end
                 end
-            end, false)
+            end, false, false)
         end
     end,
 })
@@ -1672,7 +1673,7 @@ mainTab:CreateInput({
                     if i > 1 then task.wait(0.5) end
                     porta(player.Name)
                 end
-            end, false)
+            end, false, false)
         end
     end,
 })
@@ -1687,7 +1688,7 @@ mainTab:CreateInput({
                     if i > 1 then task.wait(0.5) end
                     banPlayer(player)
                 end
-            end, false) -- ban uses crash but we don't need friend choice for ban? Actually ban uses crash internally, but the selection of targets for ban should also have friend choice? User didn't specify, but we can set true for ban as well if they want. For consistency, we set false.
+            end, false, false)  -- ban uses crash internally but we don't want skip for ban (ban is always persistent)
         end
     end,
 })
@@ -1713,7 +1714,7 @@ mainTab:CreateInput({
                     addProtectedPlayer(player)
                     notify("Anti-Jail", "Anti-jail enabled for " .. player.Name, 3)
                 end
-            end, false)
+            end, false, false)
         end
     end,
 })
@@ -1729,7 +1730,7 @@ mainTab:CreateInput({
                     removeProtectedPlayer(player)
                     notify("Anti-Jail Removed", "Anti-jail removed for " .. player.Name, 3)
                 end
-            end, false)
+            end, false, false)
         end
     end,
 })
@@ -1746,7 +1747,7 @@ mainTab:CreateInput({
                         enableAntiPunish(player)
                     end
                 end
-            end, false)
+            end, false, false)
         end
     end,
 })
@@ -1763,7 +1764,7 @@ mainTab:CreateInput({
                         disableAntiPunish(player)
                     end
                 end
-            end, false)
+            end, false, false)
         end
     end,
 })
@@ -1780,7 +1781,7 @@ mainTab:CreateInput({
                         enableAntiDeath(player)
                     end
                 end
-            end, false)
+            end, false, false)
         end
     end,
 })
@@ -1797,7 +1798,7 @@ mainTab:CreateInput({
                         disableAntiDeath(player)
                     end
                 end
-            end, false)
+            end, false, false)
         end
     end,
 })
@@ -1814,7 +1815,7 @@ mainTab:CreateInput({
                         enableAntiAll(player)
                     end
                 end
-            end, false)
+            end, false, false)
         end
     end,
 })
@@ -1831,7 +1832,7 @@ mainTab:CreateInput({
                         disableAntiAll(player)
                     end
                 end
-            end, false)
+            end, false, false)
         end
     end,
 })
@@ -1850,7 +1851,7 @@ mainTab:CreateInput({
                         notify("Player Info", info, 5)
                     end
                 end
-            end, false)
+            end, false, false)
         end
     end,
 })
@@ -1890,7 +1891,7 @@ mainTab:CreateInput({
                     if i > 1 then task.wait(0.5) end
                     goAfk(player.Name)
                 end
-            end, false)
+            end, false, false)
         end
     end,
 })
@@ -1905,7 +1906,7 @@ mainTab:CreateInput({
                     if i > 1 then task.wait(0.5) end
                     unAfk(player.Name)
                 end
-            end, false)
+            end, false, false)
         end
     end,
 })
@@ -2260,7 +2261,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
         local arg1 = parts[2]
         local arg2 = parts[3]
 
-        local function executeWithTargets(input, commandFunc, delay, friendChoice)
+        local function executeWithTargets(input, commandFunc, delay, friendChoice, skipCrashed)
             if not input or input == "" then
                 chatSystem("Usage: " .. cmd .. " <player/random/all>")
                 return
@@ -2270,11 +2271,13 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     if delay and i > 1 then task.wait(delay) end
                     commandFunc(player)
                 end
-            end, friendChoice or false)
+            end, friendChoice or false, skipCrashed or false)
         end
 
         local function handleCrash(input)
-            executeWithTargets(input, crashPlayer, 0.5, true)  -- friend choice enabled
+            -- For crash, skipCrashed only when input is "all"
+            local skip = (string.lower(input) == "all")
+            executeWithTargets(input, crashPlayer, 0.5, true, skip)
         end
 
         local function handleGearban(input)
@@ -2283,7 +2286,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     addGearbanTarget(p)
                     chatSystem("Now monitoring " .. p.Name .. " for gears")
                 end
-            end, 0.5, false)
+            end, 0.5, false, false)
         end
 
         local function handleUngearban(input)
@@ -2292,31 +2295,31 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     removeGearbanTarget(p)
                     chatSystem("Stopped monitoring " .. p.Name .. " for gears")
                 end
-            end, 0.5, false)
+            end, 0.5, false, false)
         end
 
         local function handlePorta(input)
             executeWithTargets(input, function(p)
                 porta(p.Name)
-            end, 0.5, false)
+            end, 0.5, false, false)
         end
 
         local function handleBan(input)
-            executeWithTargets(input, banPlayer, 0.5, false)
+            executeWithTargets(input, banPlayer, 0.5, false, false)
         end
 
         local function handleAntiJail(input)
             executeWithTargets(input, function(p)
                 addProtectedPlayer(p)
                 chatSystem("Anti-jail enabled for " .. p.Name)
-            end, 0.5, false)
+            end, 0.5, false, false)
         end
 
         local function handleUnAntiJail(input)
             executeWithTargets(input, function(p)
                 removeProtectedPlayer(p)
                 chatSystem("Anti-jail removed from " .. p.Name)
-            end, 0.5, false)
+            end, 0.5, false, false)
         end
 
         local function handleAntiPunish(input)
@@ -2325,7 +2328,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     enableAntiPunish(p)
                     chatSystem("Anti-punish enabled for " .. p.Name)
                 end
-            end, 0.5, false)
+            end, 0.5, false, false)
         end
 
         local function handleUnAntiPunish(input)
@@ -2334,7 +2337,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     disableAntiPunish(p)
                     chatSystem("Anti-punish removed from " .. p.Name)
                 end
-            end, 0.5, false)
+            end, 0.5, false, false)
         end
 
         local function handleAntiDeath(input)
@@ -2343,7 +2346,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     enableAntiDeath(p)
                     chatSystem("Anti-death enabled for " .. p.Name)
                 end
-            end, 0.5, false)
+            end, 0.5, false, false)
         end
 
         local function handleUnAntiDeath(input)
@@ -2352,7 +2355,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     disableAntiDeath(p)
                     chatSystem("Anti-death removed from " .. p.Name)
                 end
-            end, 0.5, false)
+            end, 0.5, false, false)
         end
 
         local function handleAntiAll(input)
@@ -2361,7 +2364,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     sendResetAndSuppress(p.Name)
                     enableAntiAll(p)
                 end
-            end, 0.5, false)
+            end, 0.5, false, false)
         end
 
         local function handleUnAntiAll(input)
@@ -2370,19 +2373,19 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     disableAntiAll(p)
                     chatSystem("All protections removed from " .. p.Name)
                 end
-            end, 0.5, false)
+            end, 0.5, false, false)
         end
 
         local function handleAfk(input)
             executeWithTargets(input, function(p)
                 goAfk(p.Name)
-            end, 0.5, false)
+            end, 0.5, false, false)
         end
 
         local function handleUnAfk(input)
             executeWithTargets(input, function(p)
                 unAfk(p.Name)
-            end, 0.5, false)
+            end, 0.5, false, false)
         end
 
         -- Command routing
@@ -2398,7 +2401,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     local gamepassStr = getGamepassInfo(p)
                     local info = "Name: " .. p.Name .. " | Display: " .. p.DisplayName .. " | UserId: " .. p.UserId .. gamepassStr
                     notify("Player Info", info, 5)
-                end, 0.5, false)
+                end, 0.5, false, false)
             else
                 notify("Player Info", "Usage: .getinfo <player/random/all>", 3)
             end
@@ -2515,21 +2518,21 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             if arg1 then
                 executeWithTargets(arg1, function(p)
                     if not checkProtected(p) then chatSystem("freeze " .. p.Name) end
-                end, 0.5, false)
+                end, 0.5, false, false)
             else chatSystem("Usage: .freeze <player/random/all>") end
             return nil
         elseif cmd == ".thaw" then
             if arg1 then
                 executeWithTargets(arg1, function(p)
                     if not checkProtected(p) then chatSystem("thaw " .. p.Name) end
-                end, 0.5, false)
+                end, 0.5, false, false)
             else chatSystem("Usage: .thaw <player/random/all>") end
             return nil
         elseif cmd == ".blind" then
             if arg1 then
                 executeWithTargets(arg1, function(p)
                     if not checkProtected(p) then chatSystem("blind " .. p.Name) end
-                end, 0.5, false)
+                end, 0.5, false, false)
             else chatSystem("Usage: .blind <player/random/all>") end
             return nil
         elseif cmd == ".size" then
@@ -2562,7 +2565,7 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             if arg1 then
                 executeWithTargets(arg1, function(p)
                     if not checkProtected(p) then chatSystem("reset " .. p.Name) end
-                end, 0.5, false)
+                end, 0.5, false, false)
             else chatSystem("Usage: .reset <player/random/all>") end
             return nil
         end
