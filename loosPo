@@ -1,9 +1,9 @@
--- ===== VERSION 58: REMOVED PROTECTION, ADDED CHAT CMDS & SILENT TOGGLES =====
-if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 58 then
+-- ===== VERSION 59: REMOVED ANTI-FREEZE, REMOVED _G.PROTECTED_PLAYERS, RESTORED ANTI-PUNISH UI =====
+if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 59 then
     script:Destroy()
     return
 end
-_G.ADMIN_SCRIPT_VERSION = 58
+_G.ADMIN_SCRIPT_VERSION = 59
 
 -- === ALLOWED GAME/PLACE IDS ===
 local ALLOWED_GAME_IDS = {}
@@ -131,22 +131,25 @@ local function isRecentlyCrashed(player)
 end
 
 -- === GLOBAL FLAGS ===
-local padMonitorRunning = true
 local monitorLoopActive = true
 local gbanTargets = {}
 local afkActive = false
 local autoClaimEnabled = true
 local padClaimerThread = nil
 
--- === Anti-Freeze (0.5s poll) ===
-local antiFreezeActive = false
--- === Anti-Crash (0.02s poll, 0.15s debounce) ===
+-- === Anti-Crash (fast thaw) ===
 local antiCrashActive = false
 local lastAntiCrashTime = 0
 
+-- === Anti-Punish protected list (no _G protection) ===
+local protectedPlayers = {}
+local suppressRe = false
+local lastReTime = 0
+local antiFreezeActive = false -- kept for backward compatibility but not used as separate toggle
+
 -- === Chat command flags ===
-local chatCmdsEnabled = true   -- default on
-local silentCommands = false   -- default off (messages visible)
+local chatCmdsEnabled = true
+local silentCommands = false
 
 -- === FRIENDS TRACKING ===
 local friendsInGame = {}
@@ -166,6 +169,7 @@ local stats = {
     playersGearbanned = 0,
     playersPortaUsed = 0,
     playersJailed = 0,
+    playersProtected = 0,
 }
 
 -- === ICONS ===
@@ -611,29 +615,7 @@ local function stopLoopGravity()
     loopGravityActive = false
 end
 
--- === ANTI-FREEZE (0.5s poll) ===
-local function startAntiFreeze()
-    if antiFreezeActive then return end
-    antiFreezeActive = true
-    task.spawn(function()
-        while antiFreezeActive and monitorLoopActive do
-            local char = LocalPlayer.Character
-            if char then
-                local rootPart = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart")
-                if rootPart and rootPart.Anchored then
-                    chatSystem("thaw me")
-                end
-            end
-            task.wait(0.5)
-        end
-    end)
-end
-
-local function stopAntiFreeze()
-    antiFreezeActive = false
-end
-
--- === ANTI-CRASH (fast poll 0.02s, debounce 0.15s) ===
+-- === ANTI-CRASH (fast thaw) ===
 local function startAntiCrash()
     if antiCrashActive then return end
     antiCrashActive = true
@@ -658,6 +640,87 @@ end
 local function stopAntiCrash()
     antiCrashActive = false
 end
+
+-- === ANTI-PUNISH FUNCTIONS (no _G protection) ===
+local function checkAndUnjail(player)
+    if not player then return end
+    local jailName = player.Name .. "'s jail"
+    local jailModel = Workspace:FindFirstChild(jailName)
+    if jailModel then
+        chatSystem("unjail " .. player.Name)
+        stats.playersJailed = stats.playersJailed + 1
+        return true
+    end
+    return false
+end
+
+local function addProtectedPlayer(player)
+    if not player then return end
+    protectedPlayers[player.Name] = true
+    stats.playersProtected = stats.playersProtected + 1
+    checkAndUnjail(player)
+end
+
+local function removeProtectedPlayer(player)
+    if not player then return end
+    protectedPlayers[player.Name] = nil
+end
+
+local function enableAntiAll(player)
+    player = player or LocalPlayer
+    addProtectedPlayer(player)
+    chatSystem("Anti-punish, anti-death, and anti-jail enabled for " .. player.Name)
+    notify("Anti-All", "All protections enabled for " .. player.Name, 3)
+end
+
+local function disableAntiAll(player)
+    player = player or LocalPlayer
+    removeProtectedPlayer(player)
+    chatSystem("All protections removed from " .. player.Name)
+    notify("Anti-All", "All protections disabled for " .. player.Name, 3)
+end
+
+local function enableAntiPunish(player)
+    if not player then return end
+    addProtectedPlayer(player)
+    chatSystem("Anti-punish enabled for " .. player.Name)
+    notify("Anti-Punish", "Anti-punish enabled for " .. player.Name, 3)
+end
+
+local function disableAntiPunish(player)
+    if not player then return end
+    removeProtectedPlayer(player)
+    chatSystem("Anti-punish removed from " .. player.Name)
+    notify("Anti-Punish", "Anti-punish disabled for " .. player.Name, 3)
+end
+
+local function enableAntiDeath(player)
+    if not player then return end
+    addProtectedPlayer(player)
+    chatSystem("Anti-death enabled for " .. player.Name)
+    notify("Anti-Death", "Anti-death enabled for " .. player.Name, 3)
+end
+
+local function disableAntiDeath(player)
+    if not player then return end
+    removeProtectedPlayer(player)
+    chatSystem("Anti-death removed from " .. player.Name)
+    notify("Anti-Death", "Anti-death disabled for " .. player.Name, 3)
+end
+
+-- Continuous unjail monitor (runs for protected players)
+task.spawn(function()
+    while monitorLoopActive do
+        checkAndUnjail(LocalPlayer)
+        for name, _ in pairs(protectedPlayers) do
+            local p = Players:FindFirstChild(name)
+            if p then
+                checkAndUnjail(p)
+            end
+        end
+        task.wait(2)
+    end
+end)
 
 -- === CONTINUOUS TOUCH DISABLE ===
 task.spawn(function()
@@ -1417,13 +1480,11 @@ local function goAfk(targetName)
         return
     end
     if target == LocalPlayer then
-        if antiFreezeActive then
-            stopAntiFreeze()
-            notify("AFK", "Anti-freeze disabled for you", 3)
-        end
         afkActive = true
+        -- also ensure anti-crash is on? maybe not.
     else
         chatSystem("freeze " .. target.Name)
+        removeProtectedPlayer(target)  -- remove anti-punish if any
     end
     chatSystem("name " .. target.Name .. " afk")
     notify("AFK", target.Name .. " is now AFK", 3)
@@ -1438,10 +1499,6 @@ local function unAfk(targetName)
     end
     if target == LocalPlayer then
         afkActive = false
-        if not antiFreezeActive then
-            startAntiFreeze()
-            notify("UNAFK", "Anti-freeze re-enabled for you", 3)
-        end
     else
         chatSystem("thaw " .. target.Name)
     end
@@ -1557,6 +1614,128 @@ mainTab:CreateInput({
     callback = function(text)
         if text and text ~= "" then
             unbanPlayer(text)
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Anti-Jail Player",
+    placeholder = "Enter player name, random, or all",
+    callback = function(text)
+        if text and text ~= "" then
+            resolvePlayerInput(text, function(players)
+                for i, player in ipairs(players) do
+                    if i > 1 then task.wait(0.5) end
+                    addProtectedPlayer(player)
+                    notify("Anti-Jail", "Anti-jail enabled for " .. player.Name, 3)
+                end
+            end, false, false)
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Remove Anti-Jail",
+    placeholder = "Enter player name, random, or all",
+    callback = function(text)
+        if text and text ~= "" then
+            resolvePlayerInput(text, function(players)
+                for i, player in ipairs(players) do
+                    if i > 1 then task.wait(0.5) end
+                    removeProtectedPlayer(player)
+                    notify("Anti-Jail Removed", "Anti-jail removed for " .. player.Name, 3)
+                end
+            end, false, false)
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Anti-Punish Player",
+    placeholder = "Enter player name, random, or all",
+    callback = function(text)
+        if text and text ~= "" then
+            resolvePlayerInput(text, function(players)
+                for i, player in ipairs(players) do
+                    if i > 1 then task.wait(0.5) end
+                    enableAntiPunish(player)
+                end
+            end, false, false)
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Remove Anti-Punish",
+    placeholder = "Enter player name, random, or all",
+    callback = function(text)
+        if text and text ~= "" then
+            resolvePlayerInput(text, function(players)
+                for i, player in ipairs(players) do
+                    if i > 1 then task.wait(0.5) end
+                    disableAntiPunish(player)
+                end
+            end, false, false)
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Anti-Death Player",
+    placeholder = "Enter player name, random, or all",
+    callback = function(text)
+        if text and text ~= "" then
+            resolvePlayerInput(text, function(players)
+                for i, player in ipairs(players) do
+                    if i > 1 then task.wait(0.5) end
+                    enableAntiDeath(player)
+                end
+            end, false, false)
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Remove Anti-Death",
+    placeholder = "Enter player name, random, or all",
+    callback = function(text)
+        if text and text ~= "" then
+            resolvePlayerInput(text, function(players)
+                for i, player in ipairs(players) do
+                    if i > 1 then task.wait(0.5) end
+                    disableAntiDeath(player)
+                end
+            end, false, false)
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Anti-All Player",
+    placeholder = "Enter player name, random, or all",
+    callback = function(text)
+        if text and text ~= "" then
+            resolvePlayerInput(text, function(players)
+                for i, player in ipairs(players) do
+                    if i > 1 then task.wait(0.5) end
+                    enableAntiAll(player)
+                end
+            end, false, false)
+        end
+    end,
+})
+
+mainTab:CreateInput({
+    name = "Remove Anti-All",
+    placeholder = "Enter player name, random, or all",
+    callback = function(text)
+        if text and text ~= "" then
+            resolvePlayerInput(text, function(players)
+                for i, player in ipairs(players) do
+                    if i > 1 then task.wait(0.5) end
+                    disableAntiAll(player)
+                end
+            end, false, false)
         end
     end,
 })
@@ -1742,6 +1921,11 @@ local jailStat = statsGroup:CreateStat({
     value = 0,
 })
 
+local protectedStat = statsGroup:CreateStat({
+    name = "Players Protected",
+    value = 0,
+})
+
 -- === INFO TAB ===
 local infoTab = window:CreateTab({
     name = "Info",
@@ -1835,46 +2019,16 @@ miscTab:CreateToggle({
     end,
 })
 
--- Anti-Freeze Toggle
-miscTab:CreateToggle({
-    name = "Anti-Freeze (auto-thaw)",
-    callback = function(value)
-        if value then
-            startAntiFreeze()
-            notify("Anti-Freeze", "Enabled", 3)
-        else
-            stopAntiFreeze()
-            notify("Anti-Freeze", "Disabled", 3)
-        end
-    end,
-})
-
--- Anti-Crash Toggle (fast)
+-- Anti-Crash (fast thaw)
 miscTab:CreateToggle({
     name = "Anti-Crash (fast thaw)",
     callback = function(value)
         if value then
             startAntiCrash()
-            notify("Anti-Crash", "Enabled (0.02s poll)", 3)
+            notify("Anti-Crash", "Enabled (0.02s poll, 0.15s debounce)", 3)
         else
             stopAntiCrash()
             notify("Anti-Crash", "Disabled", 3)
-        end
-    end,
-})
-
--- Anti-All Toggle (enables both)
-miscTab:CreateToggle({
-    name = "Anti-All",
-    callback = function(value)
-        if value then
-            startAntiFreeze()
-            startAntiCrash()
-            notify("Anti-All", "All protections enabled", 3)
-        else
-            stopAntiFreeze()
-            stopAntiCrash()
-            notify("Anti-All", "All protections disabled", 3)
         end
     end,
 })
@@ -1990,6 +2144,7 @@ task.spawn(function()
         gearbanStat:Set(stats.playersGearbanned)
         portaStat:Set(stats.playersPortaUsed)
         jailStat:Set(stats.playersJailed)
+        protectedStat:Set(stats.playersProtected)
         playersStat:Set(#Players:GetPlayers())
         pcall(function()
             userButton:SetText(LocalPlayer.DisplayName)
@@ -2007,7 +2162,6 @@ end)
 -- === CHAT COMMAND HOOK (with toggles) ===
 local old
 old = hookmetamethod(game, "__namecall", function(self, ...)
-    -- Only intercept if chat commands are enabled
     if chatCmdsEnabled and self == ChatEvent and getnamecallmethod() == "FireServer" and typeof(({...})[1]) == "string" then
         local args = {...}
         local msg = string.lower(args[1])
@@ -2199,7 +2353,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             else chatSystem("Usage: .reset <player/random/all>") end
         end
 
-        -- If silentCommands is on, block the message (return nil). Otherwise, forward to old.
         if silentCommands then
             return nil
         else
