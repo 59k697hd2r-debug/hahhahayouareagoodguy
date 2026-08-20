@@ -1,33 +1,9 @@
--- ===== VERSION 57: CRASH SKIP ONLY FOR ALL, REPLACE RESET WITH UNGEAR, FLASHIFY, NAME [CRASHED] =====
-if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 57 then
+-- ===== VERSION 58: REMOVED PROTECTION, ADDED CHAT CMDS & SILENT TOGGLES =====
+if _G.ADMIN_SCRIPT_VERSION and _G.ADMIN_SCRIPT_VERSION >= 58 then
     script:Destroy()
     return
 end
-_G.ADMIN_SCRIPT_VERSION = 57
-
--- === PROTECTED USERS ===
-if not _G.PROTECTED_PLAYERS then
-    _G.PROTECTED_PLAYERS = {}
-end
-
-local function refreshProtection()
-    local userId = game.Players.LocalPlayer.UserId
-    _G.PROTECTED_PLAYERS[userId] = tick()
-end
-refreshProtection()
-
-local function isProtected(player)
-    if not player then return false end
-    local userId = player.UserId
-    local timestamp = _G.PROTECTED_PLAYERS[userId]
-    if not timestamp then return false end
-    local threeDays = 259200
-    if (tick() - timestamp) > threeDays then
-        _G.PROTECTED_PLAYERS[userId] = nil
-        return false
-    end
-    return true
-end
+_G.ADMIN_SCRIPT_VERSION = 58
 
 -- === ALLOWED GAME/PLACE IDS ===
 local ALLOWED_GAME_IDS = {}
@@ -137,7 +113,7 @@ local GAMEPASS_PERSONS_ADMIN = 1032786574
 -- === BANNED PLAYERS ===
 local bannedPlayers = {}
 
--- === RECENTLY CRASHED (used only for skip when "all") ===
+-- === RECENTLY CRASHED (skip only for "all") ===
 local recentlyCrashed = {}
 local function markCrashed(player)
     if not player then return end
@@ -156,15 +132,21 @@ end
 
 -- === GLOBAL FLAGS ===
 local padMonitorRunning = true
-local suppressRe = false
-local protectedPlayers = {}
 local monitorLoopActive = true
 local gbanTargets = {}
-local lastReTime = 0
-local antiFreezeActive = false
 local afkActive = false
 local autoClaimEnabled = true
 local padClaimerThread = nil
+
+-- === Anti-Freeze (0.5s poll) ===
+local antiFreezeActive = false
+-- === Anti-Crash (0.02s poll, 0.15s debounce) ===
+local antiCrashActive = false
+local lastAntiCrashTime = 0
+
+-- === Chat command flags ===
+local chatCmdsEnabled = true   -- default on
+local silentCommands = false   -- default off (messages visible)
 
 -- === FRIENDS TRACKING ===
 local friendsInGame = {}
@@ -184,7 +166,6 @@ local stats = {
     playersGearbanned = 0,
     playersPortaUsed = 0,
     playersJailed = 0,
-    playersProtected = 0,
 }
 
 -- === ICONS ===
@@ -381,15 +362,6 @@ local function updateFriends()
     end
 end
 
--- === PROTECTION CHECK ===
-local function checkProtected(target)
-    if isProtected(target) then
-        notify("Protected User", "You cannot use commands on " .. target.Name .. " because they are protected", 4)
-        return true
-    end
-    return false
-end
-
 -- === PLAYER RESOLUTION ===
 local function getPlayerFromPartial(partial)
     if not partial then return nil end
@@ -410,7 +382,6 @@ local function getPlayerFromPartial(partial)
     return nil
 end
 
--- resolvePlayerInput: now accepts skipCrashed (boolean) to filter out recently crashed for "all"
 local function resolvePlayerInput(input, callback, friendChoice, skipCrashed)
     if not input or input == "" then
         notifyError("No target specified")
@@ -426,7 +397,6 @@ local function resolvePlayerInput(input, callback, friendChoice, skipCrashed)
         local targets = {}
         for _, p in ipairs(players) do
             if p == LocalPlayer then continue end
-            if isProtected(p) then continue end
             if skipCrashed and isRecentlyCrashed(p) then continue end
             if not includeFriends then
                 local isFriend = false
@@ -445,7 +415,6 @@ local function resolvePlayerInput(input, callback, friendChoice, skipCrashed)
 
     if input == "random" then
         local function pickRandom(includeFriends)
-            -- For random, we NEVER skip crashed players (skipCrashed is ignored)
             local targets = getTargets(includeFriends, false)
             if #targets == 0 then
                 notifyError("No eligible players found")
@@ -476,7 +445,7 @@ local function resolvePlayerInput(input, callback, friendChoice, skipCrashed)
         local function doAll(includeFriends)
             local targets = getTargets(includeFriends, skipCrashed or false)
             if #targets == 0 then
-                notifyError("No other unprotected players in server")
+                notifyError("No other players in server")
                 return
             end
             if callback then callback(targets) else notifyError("Callback nil") end
@@ -499,7 +468,6 @@ local function resolvePlayerInput(input, callback, friendChoice, skipCrashed)
         return
     end
 
-    -- specific player name
     local target = getPlayerFromPartial(input)
     if target then
         if callback then callback({ target }) else notifyError("Callback nil") end
@@ -643,32 +611,7 @@ local function stopLoopGravity()
     loopGravityActive = false
 end
 
--- === KILLBRICK IMMUNITY ===
-local killbrickImmunityActive = false
-
-local function startKillbrickImmunity()
-    if killbrickImmunityActive then return end
-    killbrickImmunityActive = true
-    task.spawn(function()
-        while killbrickImmunityActive and monitorLoopActive do
-            for _, v in pairs(Workspace:GetDescendants()) do
-                if v:IsA("BasePart") then
-                    local name = string.lower(v.Name)
-                    if string.find(name, "kill") or string.find(name, "lava") or string.find(name, "death") or string.find(name, "spike") then
-                        v.CanTouch = false
-                    end
-                end
-            end
-            task.wait(0.5)
-        end
-    end)
-end
-
-local function stopKillbrickImmunity()
-    killbrickImmunityActive = false
-end
-
--- === ANTI-FREEZE ===
+-- === ANTI-FREEZE (0.5s poll) ===
 local function startAntiFreeze()
     if antiFreezeActive then return end
     antiFreezeActive = true
@@ -676,7 +619,7 @@ local function startAntiFreeze()
         while antiFreezeActive and monitorLoopActive do
             local char = LocalPlayer.Character
             if char then
-                local rootPart = char:FindFirstChild("HumanoidRootPart")
+                local rootPart = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart")
                 if rootPart and rootPart.Anchored then
                     chatSystem("thaw me")
                 end
@@ -688,6 +631,32 @@ end
 
 local function stopAntiFreeze()
     antiFreezeActive = false
+end
+
+-- === ANTI-CRASH (fast poll 0.02s, debounce 0.15s) ===
+local function startAntiCrash()
+    if antiCrashActive then return end
+    antiCrashActive = true
+    task.spawn(function()
+        while antiCrashActive and monitorLoopActive do
+            local char = LocalPlayer.Character
+            if char then
+                local rootPart = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChildWhichIsA("BasePart")
+                if rootPart and rootPart.Anchored then
+                    local now = tick()
+                    if (now - lastAntiCrashTime) >= 0.15 then
+                        chatSystem("thaw me")
+                        lastAntiCrashTime = now
+                    end
+                end
+            end
+            task.wait(0.02)
+        end
+    end)
+end
+
+local function stopAntiCrash()
+    antiCrashActive = false
 end
 
 -- === CONTINUOUS TOUCH DISABLE ===
@@ -992,89 +961,6 @@ local function getNil(name, class)
     return nil
 end
 
--- ========================================
--- === ANTI FUNCTIONS ===
--- ========================================
-
-local function checkAndUnjail(player)
-    if not player then return end
-    local jailName = player.Name .. "'s jail"
-    local jailModel = Workspace:FindFirstChild(jailName)
-    if jailModel then
-        chatSystem("unjail " .. player.Name)
-        stats.playersJailed = stats.playersJailed + 1
-        return true
-    end
-    return false
-end
-
-local function addProtectedPlayer(player)
-    if not player then return end
-    protectedPlayers[player.Name] = true
-    stats.playersProtected = stats.playersProtected + 1
-    checkAndUnjail(player)
-end
-
-local function removeProtectedPlayer(player)
-    if not player then return end
-    protectedPlayers[player.Name] = nil
-end
-
-local function enableAntiAll(player)
-    player = player or LocalPlayer
-    addProtectedPlayer(player)
-    chatSystem("Anti-punish, anti-death, and anti-jail enabled for " .. player.Name)
-    notify("Anti-All", "All protections enabled for " .. player.Name, 3)
-end
-
-local function disableAntiAll(player)
-    player = player or LocalPlayer
-    removeProtectedPlayer(player)
-    chatSystem("All protections removed from " .. player.Name)
-    notify("Anti-All", "All protections disabled for " .. player.Name, 3)
-end
-
-local function enableAntiPunish(player)
-    if not player then return end
-    addProtectedPlayer(player)
-    chatSystem("Anti-punish enabled for " .. player.Name)
-    notify("Anti-Punish", "Anti-punish enabled for " .. player.Name, 3)
-end
-
-local function disableAntiPunish(player)
-    if not player then return end
-    removeProtectedPlayer(player)
-    chatSystem("Anti-punish removed from " .. player.Name)
-    notify("Anti-Punish", "Anti-punish disabled for " .. player.Name, 3)
-end
-
-local function enableAntiDeath(player)
-    if not player then return end
-    addProtectedPlayer(player)
-    chatSystem("Anti-death enabled for " .. player.Name)
-    notify("Anti-Death", "Anti-death enabled for " .. player.Name, 3)
-end
-
-local function disableAntiDeath(player)
-    if not player then return end
-    removeProtectedPlayer(player)
-    chatSystem("Anti-death removed from " .. player.Name)
-    notify("Anti-Death", "Anti-death disabled for " .. player.Name, 3)
-end
-
-task.spawn(function()
-    while monitorLoopActive do
-        checkAndUnjail(LocalPlayer)
-        for name, _ in pairs(protectedPlayers) do
-            local p = Players:FindFirstChild(name)
-            if p then
-                checkAndUnjail(p)
-            end
-        end
-        task.wait(2)
-    end
-end)
-
 -- === .gearban ===
 local function monitorGear(player)
     if not player then return end
@@ -1137,12 +1023,9 @@ local function removeGearbanTarget(player)
     end
 end
 
--- ========================================
--- === CRASH FUNCTION (no skip inside, skip handled by caller) ===
--- ========================================
+-- === CRASH FUNCTION ===
 local function crashPlayer(player)
     if not player then return end
-    if checkProtected(player) then return end
     equipBuildingTools()
     local endpoint = getSyncAPI()
     if not endpoint then
@@ -1156,7 +1039,6 @@ local function crashPlayer(player)
         return
     end
 
-    -- Check health
     local humanoid = victimChar:FindFirstChildOfClass("Humanoid")
     if humanoid and humanoid.Health <= 0 then
         chatSystem("respawn " .. player.Name)
@@ -1195,7 +1077,7 @@ local function crashPlayer(player)
     chatSystem("blind " .. victimName)
     chatSystem("size " .. victimName .. " nan")
     chatSystem("smoke " .. victimName)
-    chatSystem("flashify " .. victimName)          -- changed from "shiny" to "flashify"
+    chatSystem("flashify " .. victimName)
     chatSystem("freeze me")
 
     for i = 1, 8 do
@@ -1297,21 +1179,18 @@ local function crashPlayer(player)
     chatSystem("thaw me")
     stats.playersKicked = stats.playersKicked + 1
     markCrashed(player)
-
-    -- New: Set victim's name to include [CRASHED]
     chatSystem("name " .. victimName .. " [CRASHED]")
 
     notify("Crash", "Crashed " .. victimName .. " with " .. #swords .. " swords", 4)
 
     task.wait(1)
-    chatSystem("ungear " .. victimName)   -- replaced "reset" with "ungear"
+    chatSystem("ungear " .. victimName)
     chatSystem("crash " .. victimName)
 end
 
--- === BAN SYSTEM (uses crash) ===
+-- === BAN SYSTEM ===
 local function banPlayer(player)
     if not player then return end
-    if checkProtected(player) then return end
     local userId = player.UserId
     if bannedPlayers[userId] then
         notify("Ban", player.Name .. " is already banned", 3)
@@ -1357,7 +1236,6 @@ local function porta(targetName)
         notifyError("Player not found")
         return
     end
-    if checkProtected(target) then return end
     local victimChar = target.Character
     if not victimChar then
         notifyError("Victim has no character")
@@ -1538,7 +1416,6 @@ local function goAfk(targetName)
         notifyError("Player not found")
         return
     end
-    if checkProtected(target) then return end
     if target == LocalPlayer then
         if antiFreezeActive then
             stopAntiFreeze()
@@ -1547,7 +1424,6 @@ local function goAfk(targetName)
         afkActive = true
     else
         chatSystem("freeze " .. target.Name)
-        removeProtectedPlayer(target)
     end
     chatSystem("name " .. target.Name .. " afk")
     notify("AFK", target.Name .. " is now AFK", 3)
@@ -1560,7 +1436,6 @@ local function unAfk(targetName)
         notifyError("Player not found")
         return
     end
-    if checkProtected(target) then return end
     if target == LocalPlayer then
         afkActive = false
         if not antiFreezeActive then
@@ -1574,26 +1449,14 @@ local function unAfk(targetName)
     notify("UNAFK", target.Name .. " is no longer AFK", 3)
 end
 
--- === SUPPRESS "re" ===
-local function sendResetAndSuppress(playerName)
-    suppressRe = true
-    chatSystem("reset " .. playerName)
-    task.wait(0.5)
-    suppressRe = false
-end
-
 -- === PRINT COMMANDS ===
 local function printCommands()
     local cmds = [[
-.clr .adminclr .getinfo .antiall .antipunish .antideath .antijail
-.unantiall .unantipunish .unantideath .unantijail
-.crash .unancall .nocolall .trollclr
-.rejoin
-.gearban (.gban) .ungearban (.ungban)
+.clr .adminclr .getinfo .crash .unancall .nocolall .trollclr
+.rejoin .gearban (.gban) .ungearban (.ungban)
 .gameinfo .serverinfo .porta
 .loopws .loopjp .loopgravity
-.afk .unafk
-.ban .unban (use UI for unban)
+.afk .unafk .ban .unban
 .freeze .thaw .blind .size .speed .reset
 ]]
     print(cmds)
@@ -1610,19 +1473,18 @@ local mainTab = window:CreateTab({
     icon = ICONS.main,
 })
 
--- Crash input with friend choice and skipCrashed based on input
 mainTab:CreateInput({
     name = "Crash Player",
     placeholder = "Enter player name, random, or all",
     callback = function(text)
         if text and text ~= "" then
-            local skip = (string.lower(text) == "all")  -- only skip for "all"
+            local skip = (string.lower(text) == "all")
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
                     if i > 1 then task.wait(0.5) end
                     crashPlayer(player)
                 end
-            end, true, skip)  -- friendChoice true, skipCrashed based on input
+            end, true, skip)
         end
     end,
 })
@@ -1635,10 +1497,8 @@ mainTab:CreateInput({
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
                     if i > 1 then task.wait(0.5) end
-                    if not checkProtected(player) then
-                        addGearbanTarget(player)
-                        notify("Gearban", "Now monitoring " .. player.Name .. " for gears", 3)
-                    end
+                    addGearbanTarget(player)
+                    notify("Gearban", "Now monitoring " .. player.Name .. " for gears", 3)
                 end
             end, false, false)
         end
@@ -1653,10 +1513,8 @@ mainTab:CreateInput({
             resolvePlayerInput(text, function(players)
                 for i, player in ipairs(players) do
                     if i > 1 then task.wait(0.5) end
-                    if not checkProtected(player) then
-                        removeGearbanTarget(player)
-                        notify("Ungearban", "Stopped monitoring " .. player.Name, 3)
-                    end
+                    removeGearbanTarget(player)
+                    notify("Ungearban", "Stopped monitoring " .. player.Name, 3)
                 end
             end, false, false)
         end
@@ -1688,7 +1546,7 @@ mainTab:CreateInput({
                     if i > 1 then task.wait(0.5) end
                     banPlayer(player)
                 end
-            end, false, false)  -- ban uses crash internally but we don't want skip for ban (ban is always persistent)
+            end, false, false)
         end
     end,
 })
@@ -1699,140 +1557,6 @@ mainTab:CreateInput({
     callback = function(text)
         if text and text ~= "" then
             unbanPlayer(text)
-        end
-    end,
-})
-
-mainTab:CreateInput({
-    name = "Anti-Jail Player",
-    placeholder = "Enter player name, random, or all",
-    callback = function(text)
-        if text and text ~= "" then
-            resolvePlayerInput(text, function(players)
-                for i, player in ipairs(players) do
-                    if i > 1 then task.wait(0.5) end
-                    addProtectedPlayer(player)
-                    notify("Anti-Jail", "Anti-jail enabled for " .. player.Name, 3)
-                end
-            end, false, false)
-        end
-    end,
-})
-
-mainTab:CreateInput({
-    name = "Remove Anti-Jail",
-    placeholder = "Enter player name, random, or all",
-    callback = function(text)
-        if text and text ~= "" then
-            resolvePlayerInput(text, function(players)
-                for i, player in ipairs(players) do
-                    if i > 1 then task.wait(0.5) end
-                    removeProtectedPlayer(player)
-                    notify("Anti-Jail Removed", "Anti-jail removed for " .. player.Name, 3)
-                end
-            end, false, false)
-        end
-    end,
-})
-
-mainTab:CreateInput({
-    name = "Anti-Punish Player",
-    placeholder = "Enter player name, random, or all",
-    callback = function(text)
-        if text and text ~= "" then
-            resolvePlayerInput(text, function(players)
-                for i, player in ipairs(players) do
-                    if i > 1 then task.wait(0.5) end
-                    if not checkProtected(player) then
-                        enableAntiPunish(player)
-                    end
-                end
-            end, false, false)
-        end
-    end,
-})
-
-mainTab:CreateInput({
-    name = "Remove Anti-Punish",
-    placeholder = "Enter player name, random, or all",
-    callback = function(text)
-        if text and text ~= "" then
-            resolvePlayerInput(text, function(players)
-                for i, player in ipairs(players) do
-                    if i > 1 then task.wait(0.5) end
-                    if not checkProtected(player) then
-                        disableAntiPunish(player)
-                    end
-                end
-            end, false, false)
-        end
-    end,
-})
-
-mainTab:CreateInput({
-    name = "Anti-Death Player",
-    placeholder = "Enter player name, random, or all",
-    callback = function(text)
-        if text and text ~= "" then
-            resolvePlayerInput(text, function(players)
-                for i, player in ipairs(players) do
-                    if i > 1 then task.wait(0.5) end
-                    if not checkProtected(player) then
-                        enableAntiDeath(player)
-                    end
-                end
-            end, false, false)
-        end
-    end,
-})
-
-mainTab:CreateInput({
-    name = "Remove Anti-Death",
-    placeholder = "Enter player name, random, or all",
-    callback = function(text)
-        if text and text ~= "" then
-            resolvePlayerInput(text, function(players)
-                for i, player in ipairs(players) do
-                    if i > 1 then task.wait(0.5) end
-                    if not checkProtected(player) then
-                        disableAntiDeath(player)
-                    end
-                end
-            end, false, false)
-        end
-    end,
-})
-
-mainTab:CreateInput({
-    name = "Anti-All Player",
-    placeholder = "Enter player name, random, or all",
-    callback = function(text)
-        if text and text ~= "" then
-            resolvePlayerInput(text, function(players)
-                for i, player in ipairs(players) do
-                    if i > 1 then task.wait(0.5) end
-                    if not checkProtected(player) then
-                        enableAntiAll(player)
-                    end
-                end
-            end, false, false)
-        end
-    end,
-})
-
-mainTab:CreateInput({
-    name = "Remove Anti-All",
-    placeholder = "Enter player name, random, or all",
-    callback = function(text)
-        if text and text ~= "" then
-            resolvePlayerInput(text, function(players)
-                for i, player in ipairs(players) do
-                    if i > 1 then task.wait(0.5) end
-                    if not checkProtected(player) then
-                        disableAntiAll(player)
-                    end
-                end
-            end, false, false)
         end
     end,
 })
@@ -1852,31 +1576,6 @@ mainTab:CreateInput({
                     end
                 end
             end, false, false)
-        end
-    end,
-})
-
--- Self toggles
-mainTab:CreateToggle({
-    name = "Anti-All Self",
-    callback = function(value)
-        if value then
-            enableAntiAll(LocalPlayer)
-        else
-            disableAntiAll(LocalPlayer)
-        end
-    end,
-})
-
-mainTab:CreateToggle({
-    name = "Anti-Freeze Self",
-    callback = function(value)
-        if value then
-            startAntiFreeze()
-            notify("Anti-Freeze", "Enabled. Will auto-thaw when anchored", 3)
-        else
-            stopAntiFreeze()
-            notify("Anti-Freeze", "Disabled", 3)
         end
     end,
 })
@@ -2043,11 +1742,6 @@ local jailStat = statsGroup:CreateStat({
     value = 0,
 })
 
-local protectedStat = statsGroup:CreateStat({
-    name = "Players Protected",
-    value = 0,
-})
-
 -- === INFO TAB ===
 local infoTab = window:CreateTab({
     name = "Info",
@@ -2097,7 +1791,7 @@ local userGroup = infoTab:CreateGroup({
     name = "Script User",
 })
 local userButton = userGroup:CreateButton({
-    name = LocalPlayer.DisplayName .. (table.find(friendsInGame, LocalPlayer.UserId) and " (Friend)" or ""),
+    name = LocalPlayer.DisplayName,
     callback = function() end,
 })
 
@@ -2121,12 +1815,77 @@ local miscTab = window:CreateTab({
     icon = ICONS.misc,
 })
 
+-- Chat Commands Toggle
+miscTab:CreateToggle({
+    name = "Chat Commands",
+    value = true,
+    callback = function(value)
+        chatCmdsEnabled = value
+        notify("Chat Commands", value and "Enabled" or "Disabled", 3)
+    end,
+})
+
+-- Silent Commands Toggle
+miscTab:CreateToggle({
+    name = "Silent Commands",
+    value = false,
+    callback = function(value)
+        silentCommands = value
+        notify("Silent Commands", value and "Commands hidden" or "Commands visible", 3)
+    end,
+})
+
+-- Anti-Freeze Toggle
+miscTab:CreateToggle({
+    name = "Anti-Freeze (auto-thaw)",
+    callback = function(value)
+        if value then
+            startAntiFreeze()
+            notify("Anti-Freeze", "Enabled", 3)
+        else
+            stopAntiFreeze()
+            notify("Anti-Freeze", "Disabled", 3)
+        end
+    end,
+})
+
+-- Anti-Crash Toggle (fast)
+miscTab:CreateToggle({
+    name = "Anti-Crash (fast thaw)",
+    callback = function(value)
+        if value then
+            startAntiCrash()
+            notify("Anti-Crash", "Enabled (0.02s poll)", 3)
+        else
+            stopAntiCrash()
+            notify("Anti-Crash", "Disabled", 3)
+        end
+    end,
+})
+
+-- Anti-All Toggle (enables both)
+miscTab:CreateToggle({
+    name = "Anti-All",
+    callback = function(value)
+        if value then
+            startAntiFreeze()
+            startAntiCrash()
+            notify("Anti-All", "All protections enabled", 3)
+        else
+            stopAntiFreeze()
+            stopAntiCrash()
+            notify("Anti-All", "All protections disabled", 3)
+        end
+    end,
+})
+
+-- Killbrick Immunity
 miscTab:CreateToggle({
     name = "Killbrick Immunity",
     callback = function(value)
         if value then
             startKillbrickImmunity()
-            notify("Killbrick Immunity", "Enabled. Killbrick parts will be disabled", 3)
+            notify("Killbrick Immunity", "Enabled", 3)
         else
             stopKillbrickImmunity()
             notify("Killbrick Immunity", "Disabled", 3)
@@ -2231,14 +1990,9 @@ task.spawn(function()
         gearbanStat:Set(stats.playersGearbanned)
         portaStat:Set(stats.playersPortaUsed)
         jailStat:Set(stats.playersJailed)
-        protectedStat:Set(stats.playersProtected)
         playersStat:Set(#Players:GetPlayers())
-        local friendText = ""
-        if table.find(friendsInGame, LocalPlayer.UserId) then
-            friendText = " (Friend)"
-        end
         pcall(function()
-            userButton:SetText(LocalPlayer.DisplayName .. friendText)
+            userButton:SetText(LocalPlayer.DisplayName)
         end)
         task.wait(1)
     end
@@ -2250,11 +2004,12 @@ task.spawn(function()
     startPadClaimer()
 end)
 
--- === CHAT COMMAND HOOK ===
+-- === CHAT COMMAND HOOK (with toggles) ===
 local old
 old = hookmetamethod(game, "__namecall", function(self, ...)
-    local args = {...}
-    if self == ChatEvent and getnamecallmethod() == "FireServer" and typeof(args[1]) == "string" then
+    -- Only intercept if chat commands are enabled
+    if chatCmdsEnabled and self == ChatEvent and getnamecallmethod() == "FireServer" and typeof(({...})[1]) == "string" then
+        local args = {...}
         local msg = string.lower(args[1])
         local parts = string.split(msg, " ")
         local cmd = parts[1]
@@ -2275,26 +2030,21 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
         end
 
         local function handleCrash(input)
-            -- For crash, skipCrashed only when input is "all"
             local skip = (string.lower(input) == "all")
             executeWithTargets(input, crashPlayer, 0.5, true, skip)
         end
 
         local function handleGearban(input)
             executeWithTargets(input, function(p)
-                if not checkProtected(p) then
-                    addGearbanTarget(p)
-                    chatSystem("Now monitoring " .. p.Name .. " for gears")
-                end
+                addGearbanTarget(p)
+                chatSystem("Now monitoring " .. p.Name .. " for gears")
             end, 0.5, false, false)
         end
 
         local function handleUngearban(input)
             executeWithTargets(input, function(p)
-                if not checkProtected(p) then
-                    removeGearbanTarget(p)
-                    chatSystem("Stopped monitoring " .. p.Name .. " for gears")
-                end
+                removeGearbanTarget(p)
+                chatSystem("Stopped monitoring " .. p.Name .. " for gears")
             end, 0.5, false, false)
         end
 
@@ -2306,74 +2056,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
 
         local function handleBan(input)
             executeWithTargets(input, banPlayer, 0.5, false, false)
-        end
-
-        local function handleAntiJail(input)
-            executeWithTargets(input, function(p)
-                addProtectedPlayer(p)
-                chatSystem("Anti-jail enabled for " .. p.Name)
-            end, 0.5, false, false)
-        end
-
-        local function handleUnAntiJail(input)
-            executeWithTargets(input, function(p)
-                removeProtectedPlayer(p)
-                chatSystem("Anti-jail removed from " .. p.Name)
-            end, 0.5, false, false)
-        end
-
-        local function handleAntiPunish(input)
-            executeWithTargets(input, function(p)
-                if not checkProtected(p) then
-                    enableAntiPunish(p)
-                    chatSystem("Anti-punish enabled for " .. p.Name)
-                end
-            end, 0.5, false, false)
-        end
-
-        local function handleUnAntiPunish(input)
-            executeWithTargets(input, function(p)
-                if not checkProtected(p) then
-                    disableAntiPunish(p)
-                    chatSystem("Anti-punish removed from " .. p.Name)
-                end
-            end, 0.5, false, false)
-        end
-
-        local function handleAntiDeath(input)
-            executeWithTargets(input, function(p)
-                if not checkProtected(p) then
-                    enableAntiDeath(p)
-                    chatSystem("Anti-death enabled for " .. p.Name)
-                end
-            end, 0.5, false, false)
-        end
-
-        local function handleUnAntiDeath(input)
-            executeWithTargets(input, function(p)
-                if not checkProtected(p) then
-                    disableAntiDeath(p)
-                    chatSystem("Anti-death removed from " .. p.Name)
-                end
-            end, 0.5, false, false)
-        end
-
-        local function handleAntiAll(input)
-            executeWithTargets(input, function(p)
-                if not checkProtected(p) then
-                    sendResetAndSuppress(p.Name)
-                    enableAntiAll(p)
-                end
-            end, 0.5, false, false)
-        end
-
-        local function handleUnAntiAll(input)
-            executeWithTargets(input, function(p)
-                if not checkProtected(p) then
-                    disableAntiAll(p)
-                    chatSystem("All protections removed from " .. p.Name)
-                end
-            end, 0.5, false, false)
         end
 
         local function handleAfk(input)
@@ -2388,13 +2070,10 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             end, 0.5, false, false)
         end
 
-        -- Command routing
         if cmd == ".clr" then
             task.spawn(clearAll)
-            return nil
         elseif cmd == ".adminclr" then
             task.spawn(adminClear)
-            return nil
         elseif cmd == ".getinfo" then
             if arg1 then
                 executeWithTargets(arg1, function(p)
@@ -2405,61 +2084,26 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             else
                 notify("Player Info", "Usage: .getinfo <player/random/all>", 3)
             end
-            return nil
-        elseif cmd == ".antiall" then
-            if arg1 then handleAntiAll(arg1) else chatSystem("Usage: .antiall <player/random/all>") end
-            return nil
-        elseif cmd == ".antipunish" then
-            if arg1 then handleAntiPunish(arg1) else chatSystem("Usage: .antipunish <player/random/all>") end
-            return nil
-        elseif cmd == ".antideath" then
-            if arg1 then handleAntiDeath(arg1) else chatSystem("Usage: .antideath <player/random/all>") end
-            return nil
-        elseif cmd == ".antijail" then
-            if arg1 then handleAntiJail(arg1) else chatSystem("Usage: .antijail <player/random/all>") end
-            return nil
-        elseif cmd == ".unantiall" then
-            if arg1 then handleUnAntiAll(arg1) else chatSystem("Usage: .unantiall <player/random/all>") end
-            return nil
-        elseif cmd == ".unantipunish" then
-            if arg1 then handleUnAntiPunish(arg1) else chatSystem("Usage: .unantipunish <player/random/all>") end
-            return nil
-        elseif cmd == ".unantideath" then
-            if arg1 then handleUnAntiDeath(arg1) else chatSystem("Usage: .unantideath <player/random/all>") end
-            return nil
-        elseif cmd == ".unantijail" then
-            if arg1 then handleUnAntiJail(arg1) else chatSystem("Usage: .unantijail <player/random/all>") end
-            return nil
         elseif cmd == ".crash" or cmd == ".kick" then
             if arg1 then handleCrash(arg1) else chatSystem("Usage: .crash <player/random/all>") end
-            return nil
         elseif cmd == ".unancall" then
             task.spawn(unanchorAll)
-            return nil
         elseif cmd == ".nocolall" then
             task.spawn(nocolAll)
-            return nil
         elseif cmd == ".trollclr" then
             task.spawn(trollClr)
-            return nil
         elseif cmd == ".rejoin" then
             task.spawn(rejoin)
-            return nil
         elseif cmd == ".gearban" or cmd == ".gban" then
             if arg1 then handleGearban(arg1) else chatSystem("Usage: .gearban <player/random/all>") end
-            return nil
         elseif cmd == ".ungearban" or cmd == ".ungban" then
             if arg1 then handleUngearban(arg1) else chatSystem("Usage: .ungearban <player/random/all>") end
-            return nil
         elseif cmd == ".gameinfo" then
             task.spawn(gameInfo)
-            return nil
         elseif cmd == ".serverinfo" then
             task.spawn(serverInfo)
-            return nil
         elseif cmd == ".porta" then
             if arg1 then handlePorta(arg1) else chatSystem("Usage: .porta <player/random/all>") end
-            return nil
         elseif cmd == ".loopws" then
             if arg1 then
                 local num = tonumber(arg1)
@@ -2473,7 +2117,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             else
                 if loopWSActive then stopLoopWS() chatSystem("WalkSpeed loop stopped") else chatSystem("WalkSpeed loop not active. Usage: .loopws <number>") end
             end
-            return nil
         elseif cmd == ".loopjp" then
             if arg1 then
                 local num = tonumber(arg1)
@@ -2487,7 +2130,6 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             else
                 if loopJPActive then stopLoopJP() chatSystem("JumpPower loop stopped") else chatSystem("JumpPower loop not active. Usage: .loopjp <number>") end
             end
-            return nil
         elseif cmd == ".loopgravity" then
             if arg1 then
                 local num = tonumber(arg1)
@@ -2501,45 +2143,36 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             else
                 if loopGravityActive then stopLoopGravity() chatSystem("Gravity loop stopped") else chatSystem("Gravity loop not active. Usage: .loopgravity <number>") end
             end
-            return nil
         elseif cmd == ".afk" then
             if arg1 then handleAfk(arg1) else chatSystem("Usage: .afk <player/random/all>") end
-            return nil
         elseif cmd == ".unafk" then
             if arg1 then handleUnAfk(arg1) else chatSystem("Usage: .unafk <player/random/all>") end
-            return nil
         elseif cmd == ".ban" then
             if arg1 then handleBan(arg1) else chatSystem("Usage: .ban <player/random/all>") end
-            return nil
         elseif cmd == ".unban" then
             if arg1 then unbanPlayer(arg1) else chatSystem("Usage: .unban <name or User ID>") end
-            return nil
         elseif cmd == ".freeze" then
             if arg1 then
                 executeWithTargets(arg1, function(p)
-                    if not checkProtected(p) then chatSystem("freeze " .. p.Name) end
+                    chatSystem("freeze " .. p.Name)
                 end, 0.5, false, false)
             else chatSystem("Usage: .freeze <player/random/all>") end
-            return nil
         elseif cmd == ".thaw" then
             if arg1 then
                 executeWithTargets(arg1, function(p)
-                    if not checkProtected(p) then chatSystem("thaw " .. p.Name) end
+                    chatSystem("thaw " .. p.Name)
                 end, 0.5, false, false)
             else chatSystem("Usage: .thaw <player/random/all>") end
-            return nil
         elseif cmd == ".blind" then
             if arg1 then
                 executeWithTargets(arg1, function(p)
-                    if not checkProtected(p) then chatSystem("blind " .. p.Name) end
+                    chatSystem("blind " .. p.Name)
                 end, 0.5, false, false)
             else chatSystem("Usage: .blind <player/random/all>") end
-            return nil
         elseif cmd == ".size" then
             if arg1 and arg2 then
                 local target = getPlayerFromPartial(arg1)
                 if target then
-                    if checkProtected(target) then return end
                     chatSystem("size " .. target.Name .. " " .. arg2)
                 else
                     chatSystem("Player not found")
@@ -2547,12 +2180,10 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             else
                 chatSystem("Usage: .size <player> <value>")
             end
-            return nil
         elseif cmd == ".speed" then
             if arg1 and arg2 then
                 local target = getPlayerFromPartial(arg1)
                 if target then
-                    if checkProtected(target) then return end
                     chatSystem("speed " .. target.Name .. " " .. arg2)
                 else
                     chatSystem("Player not found")
@@ -2560,22 +2191,30 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             else
                 chatSystem("Usage: .speed <player> <value>")
             end
-            return nil
         elseif cmd == ".reset" then
             if arg1 then
                 executeWithTargets(arg1, function(p)
-                    if not checkProtected(p) then chatSystem("reset " .. p.Name) end
+                    chatSystem("reset " .. p.Name)
                 end, 0.5, false, false)
             else chatSystem("Usage: .reset <player/random/all>") end
+        end
+
+        -- If silentCommands is on, block the message (return nil). Otherwise, forward to old.
+        if silentCommands then
             return nil
+        else
+            return old and old(self, ...)
         end
     end
     return old and old(self, ...)
 end)
 
--- === CHARACTER MONITOR ===
+-- === CHARACTER MONITOR (auto-respawn) ===
 local wasAlive = true
 local debounce = false
+local lastReTime = 0
+local suppressRe = false
+
 task.spawn(function()
     while monitorLoopActive do
         local char = LocalPlayer.Character
@@ -2590,7 +2229,7 @@ task.spawn(function()
                 isPunished = true
             end
         end
-        local isAlive = (char ~= nil and char.Parent == Workspace and not isDead and not isPunished)
+        local isAlive = (char ~= nil and char.Parent == workspace and not isDead and not isPunished)
         if wasAlive and not isAlive then
             local now = tick()
             if not debounce and not suppressRe and (now - lastReTime > 1) then
