@@ -1,19 +1,15 @@
 --[[
-  Roblox Executor Emulator v22.0 – CLEAN & FIXED
-  ==============================================
-  CHANGES:
+  Roblox Executor Emulator v23.0 – FINAL
+  ======================================
+  - TextBox fills the ScrollingFrame exactly (Size = UDim2.new(1, 0, 1, 0))
   - Removed syntax highlighting and autocorrect completely.
-  - Font size range: 4 to 30 (adjustable in Settings).
-  - Line numbers now fixed – no overlap with the textbox.
-  - Textbox fills the entire ScrollingFrame area.
-  - Removed "Infinite Jump" tutorial.
-  - Dehash (deobfuscate) renames all tracked instances back to original names.
-  - Script name is no longer obfuscated.
+  - Font size range 4–30.
+  - Line numbers fixed (no overlap).
+  - Dehash renames ALL tracked instances.
+  - Script name is NOT obfuscated.
+  - Infinite Jump tutorial removed.
 --]]
 
--- ============================================================
--- OBFUSCATION ENGINE (only for UI elements)
--- ============================================================
 local function generateObfuscatedString()
     local length = 66
     local chars = {
@@ -36,30 +32,22 @@ local function generateObfuscatedString()
 end
 
 -- Store original names for Dehash
-local obfuscatedInstances = {}  -- [instance] = originalName
+local obfuscatedInstances = {}
 local function registerObfuscatedInstance(instance, originalName)
     obfuscatedInstances[instance] = originalName
 end
 
--- ============================================================
--- INITIALIZATION
--- ============================================================
 local player = game.Players.LocalPlayer
 local coreGui = game:GetService("CoreGui")
 local starterGui = game:GetService("StarterGui")
 
--- Create obfuscated folder
 local folder = Instance.new("Folder")
 folder.Name = generateObfuscatedString()
 folder.Parent = coreGui
 registerObfuscatedInstance(folder, "CoreGui_Folder")
 
--- Do NOT obfuscate the script's name
 script.Name = "ExecutorEmulator_LocalScript"
 
--- ============================================================
--- MAIN EXECUTOR SCREENGUI
--- ============================================================
 local mainGui = Instance.new("ScreenGui")
 mainGui.Name = generateObfuscatedString()
 mainGui.ResetOnSpawn = false
@@ -75,9 +63,6 @@ mainFrame.BorderSizePixel = 0
 mainFrame.Parent = mainGui
 registerObfuscatedInstance(mainFrame, "MainFrame")
 
--- ============================================================
--- DECORATIVE IMAGES (Free decals)
--- ============================================================
 local headerDecal = Instance.new("ImageLabel")
 headerDecal.Size = UDim2.new(1, 0, 0, 60)
 headerDecal.Position = UDim2.new(0, 0, 0, 0)
@@ -96,7 +81,6 @@ local dragDetector = Instance.new("UIDragDetector")
 dragDetector.Name = generateObfuscatedString()
 dragDetector.Parent = mainFrame
 
--- Title Bar
 local titleBar = Instance.new("Frame")
 titleBar.Name = generateObfuscatedString()
 titleBar.Size = UDim2.new(1, 0, 0, 30)
@@ -111,7 +95,7 @@ titleLabel.Name = generateObfuscatedString()
 titleLabel.Size = UDim2.new(1, -340, 1, 0)
 titleLabel.Position = UDim2.new(0, 10, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Executor Emulator v22.0"
+titleLabel.Text = "Executor Emulator v23.0"
 titleLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
 titleLabel.TextSize = 14
 titleLabel.Font = Enum.Font.SourceSansBold
@@ -160,9 +144,7 @@ closeBtn.TextSize = 16
 closeBtn.Font = Enum.Font.SourceSansBold
 closeBtn.Parent = titleBar
 
--- ============================================================
--- CODE CONTAINER (with line numbers)
--- ============================================================
+-- Code container
 local codeContainer = Instance.new("Frame")
 codeContainer.Name = generateObfuscatedString()
 codeContainer.Size = UDim2.new(1, -20, 0, 270)
@@ -170,7 +152,7 @@ codeContainer.Position = UDim2.new(0, 10, 0, 70)
 codeContainer.BackgroundTransparency = 1
 codeContainer.Parent = mainFrame
 
--- Line Numbers (fixed width, no overlap)
+-- Line Numbers
 local lineNumbers = Instance.new("TextLabel")
 lineNumbers.Name = generateObfuscatedString()
 lineNumbers.Size = UDim2.new(0, 30, 1, 0)
@@ -187,10 +169,10 @@ lineNumbers.TextYAlignment = Enum.TextYAlignment.Top
 lineNumbers.TextWrapped = false
 lineNumbers.Parent = codeContainer
 
--- ScrollingFrame for Code Box (spaced to avoid overlap)
+-- ScrollingFrame for Code Box (leaves space for line numbers)
 local codeScrollingFrame = Instance.new("ScrollingFrame")
 codeScrollingFrame.Name = generateObfuscatedString()
-codeScrollingFrame.Size = UDim2.new(1, -35, 1, 0)  -- leave space for line numbers
+codeScrollingFrame.Size = UDim2.new(1, -35, 1, 0)
 codeScrollingFrame.Position = UDim2.new(0, 35, 0, 0)
 codeScrollingFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 codeScrollingFrame.BorderSizePixel = 1
@@ -200,10 +182,10 @@ codeScrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
 codeScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 codeScrollingFrame.Parent = codeContainer
 
--- Code TextBox (fills the ScrollingFrame)
+-- TextBox - now fills the ScrollingFrame completely (Size = UDim2.new(1, 0, 1, 0))
 local codeBox = Instance.new("TextBox")
 codeBox.Name = generateObfuscatedString()
-codeBox.Size = UDim2.new(1, 0, 0, 30)
+codeBox.Size = UDim2.new(1, 0, 1, 0)  -- matches parent exactly
 codeBox.Position = UDim2.new(0, 0, 0, 0)
 codeBox.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 codeBox.BorderSizePixel = 0
@@ -216,21 +198,16 @@ codeBox.TextXAlignment = Enum.TextXAlignment.Left
 codeBox.TextYAlignment = Enum.TextYAlignment.Top
 codeBox.MultiLine = true
 codeBox.ClearTextOnFocus = false
-codeBox.AutomaticSize = Enum.AutomaticSize.Y
+codeBox.AutomaticSize = Enum.AutomaticSize.Y  -- still grows vertically
 codeBox.Parent = codeScrollingFrame
 
--- ============================================================
--- SETTINGS (no highlighting/autocorrect)
--- ============================================================
+-- Settings (simple)
 local executorSettings = {
     fontSize = 13,
     showLineNumbers = true,
     autoResizeFont = true,
 }
 
--- ============================================================
--- FONT RESIZE
--- ============================================================
 local function autoResizeFont()
     if not executorSettings.autoResizeFont then return end
     local text = codeBox.Text
@@ -248,9 +225,6 @@ local function autoResizeFont()
     lineNumbers.TextSize = codeBox.TextSize - 1
 end
 
--- ============================================================
--- LINE NUMBERS
--- ============================================================
 local function updateLineNumbers()
     if not executorSettings.showLineNumbers then
         lineNumbers.Visible = false
@@ -269,9 +243,6 @@ local function updateLineNumbers()
     lineNumbers.Text = table.concat(lines, "\n")
 end
 
--- ============================================================
--- CANVAS SIZE (ensures scrolling works)
--- ============================================================
 local function updateCanvasSize()
     task.wait(0.05)
     local height = codeBox.AbsoluteSize.Y + 10
@@ -279,7 +250,6 @@ local function updateCanvasSize()
     codeScrollingFrame.CanvasPosition = Vector2.new(0, height)
 end
 
--- Connect signals
 codeBox:GetPropertyChangedSignal("Text"):Connect(function()
     updateLineNumbers()
     autoResizeFont()
@@ -292,9 +262,6 @@ updateLineNumbers()
 autoResizeFont()
 updateCanvasSize()
 
--- ============================================================
--- FONT SIZE APPLY
--- ============================================================
 local function applyFontSize()
     codeBox.TextSize = executorSettings.fontSize
     lineNumbers.TextSize = executorSettings.fontSize - 1
@@ -302,9 +269,6 @@ local function applyFontSize()
     updateCanvasSize()
 end
 
--- ============================================================
--- ERROR LABEL
--- ============================================================
 local errorLabel = Instance.new("TextLabel")
 errorLabel.Name = generateObfuscatedString()
 errorLabel.Size = UDim2.new(1, -20, 0, 50)
@@ -322,9 +286,6 @@ errorLabel.TextXAlignment = Enum.TextXAlignment.Left
 errorLabel.TextYAlignment = Enum.TextYAlignment.Top
 errorLabel.Parent = mainFrame
 
--- ============================================================
--- BUTTONS
--- ============================================================
 local btnContainer = Instance.new("Frame")
 btnContainer.Name = generateObfuscatedString()
 btnContainer.Size = UDim2.new(1, -20, 0, 30)
@@ -354,9 +315,7 @@ local newLineBtn = createButton("New Line", 210, 100, Color3.fromRGB(30, 80, 130
 local copyBtn = createButton("Copy", 315, 90, Color3.fromRGB(80, 30, 130))
 local dehashBtn = createButton("Dehash Names", 410, 120, Color3.fromRGB(130, 130, 30))
 
--- ============================================================
--- DEHASH NAMES (deobfuscates ALL tracked instances)
--- ============================================================
+-- Dehash
 local dehashActive = false
 dehashBtn.MouseButton1Click:Connect(function()
     dehashActive = not dehashActive
@@ -387,9 +346,6 @@ dehashBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- ============================================================
--- NOTIFICATION FUNCTION (Roblox official)
--- ============================================================
 local function sendRobloxNotification(title, message, duration, icon)
     duration = duration or 5
     icon = icon or "rbxassetid://109251559"
@@ -403,11 +359,8 @@ local function sendRobloxNotification(title, message, duration, icon)
     end)
 end
 
--- ============================================================
--- EXECUTE BUTTON (with console output)
--- ============================================================
 execBtn.MouseButton1Click:Connect(function()
-    local rawText = codeBox.Text  -- no HTML stripping needed now
+    local rawText = codeBox.Text
     if rawText == nil or rawText:match("^%s*$") then
         errorLabel.Text = "Error: Empty script."
         return
@@ -487,9 +440,6 @@ execBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- ============================================================
--- CLEAR, NEW LINE, COPY
--- ============================================================
 clearBtn.MouseButton1Click:Connect(function()
     codeBox.Text = ""
     errorLabel.Text = "No errors."
@@ -526,9 +476,6 @@ copyBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- ============================================================
--- MINIMIZE / CLOSE
--- ============================================================
 local minimized = false
 local originalSize = mainFrame.Size
 local originalPos = mainFrame.Position
@@ -562,9 +509,7 @@ closeBtn.MouseButton1Click:Connect(function()
     if tutorialsGui then tutorialsGui:Destroy() end
 end)
 
--- ============================================================
--- SETTINGS GUI
--- ============================================================
+-- Settings GUI
 local settingsGui = nil
 local function createSettingsGui()
     if settingsGui then
@@ -581,7 +526,7 @@ local function createSettingsGui()
 
     local frame = Instance.new("Frame")
     frame.Name = generateObfuscatedString()
-    frame.Size = UDim2.new(0, 300, 0, 180)  -- shorter since we removed options
+    frame.Size = UDim2.new(0, 300, 0, 180)
     frame.Position = UDim2.new(0.5, -150, 0.5, -90)
     frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
     frame.BorderSizePixel = 1
@@ -630,7 +575,6 @@ local function createSettingsGui()
     content.BackgroundTransparency = 1
     content.Parent = frame
 
-    -- Font size
     local fontSizeLabel = Instance.new("TextLabel")
     fontSizeLabel.Name = generateObfuscatedString()
     fontSizeLabel.Size = UDim2.new(0, 80, 0, 28)
@@ -667,7 +611,6 @@ local function createSettingsGui()
         end
     end)
 
-    -- Line numbers toggle
     local lineNumbersSetting = Instance.new("TextButton")
     lineNumbersSetting.Name = generateObfuscatedString()
     lineNumbersSetting.Size = UDim2.new(0, 200, 0, 28)
@@ -680,7 +623,6 @@ local function createSettingsGui()
     lineNumbersSetting.Font = Enum.Font.SourceSansBold
     lineNumbersSetting.Parent = content
 
-    -- Auto-resize font toggle
     local autoResizeSetting = Instance.new("TextButton")
     autoResizeSetting.Name = generateObfuscatedString()
     autoResizeSetting.Size = UDim2.new(0, 200, 0, 28)
@@ -732,9 +674,7 @@ settingsBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- ============================================================
--- TUTORIALS GUI (removed "Infinite Jump")
--- ============================================================
+-- Tutorials GUI (no Infinite Jump)
 local tutorialsGui = nil
 local function createTutorialsGui()
     if tutorialsGui then
@@ -959,14 +899,11 @@ tutorialsBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- ============================================================
--- FINAL INIT
--- ============================================================
 applyFontSize()
 updateLineNumbers()
 
-print("Executor Emulator v22.0 loaded successfully!")
-print("- Removed syntax highlighting and autocorrect")
+print("Executor Emulator v23.0 loaded successfully!")
+print("- TextBox now matches ScrollingFrame size exactly")
 print("- Font size range: 4-30")
 print("- Line numbers fixed (no overlap)")
 print("- Dehash renames ALL tracked instances")
