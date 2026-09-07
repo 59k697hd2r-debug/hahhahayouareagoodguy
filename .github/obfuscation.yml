@@ -44,6 +44,7 @@ jobs:
                 ;;
               *.lua)
                 echo "Obfuscating Lua: ownersscript.lua"
+                echo "Obfuscating Lua: loosPo"
                 # Luasrcdiet strips names, changes variables, and reduces readability
                 luasrcdiet --basic --opt-entropy --opt-srclines "$file" -o "$file.tmp" && mv "$file.tmp" "$file"
                 ;;
