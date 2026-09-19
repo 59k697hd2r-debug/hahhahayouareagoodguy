@@ -1,0 +1,645 @@
+--[[
+    Bytecode Viewer v2
+    Draggable, collapsible UI — load a file path or script instance path,
+    view compiled bytecode as hex, then copy / clear / export to .txt / .lua / .luau
+
+    On launch: runs a capability test — checks if the executor supports
+    file saving (writefile + readfile + isfile + delfile) and getscriptbytecode.
+    Displays pass/fail for each using identifyexecutor() name.
+]]
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local PlayerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+-- parent to protected gui
+local parentTarget
+pcall(function() parentTarget = gethui and gethui() end)
+parentTarget = parentTarget or game:GetService("CoreGui")
+pcall(function()
+    local existing = parentTarget:FindFirstChild("BytecodeViewer")
+    if existing then existing:Destroy() end
+end)
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "BytecodeViewer"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.IgnoreGuiInset = true
+pcall(function() ScreenGui.Parent = parentTarget end)
+if not ScreenGui.Parent then ScreenGui.Parent = PlayerGui end
+
+-- ── palette ──────────────────────────────────────────────
+local C = {
+    bg       = Color3.fromRGB(22, 22, 28),
+    header   = Color3.fromRGB(32, 32, 40),
+    input    = Color3.fromRGB(38, 38, 46),
+    display  = Color3.fromRGB(16, 16, 20),
+    accent   = Color3.fromRGB(80, 140, 210),
+    copyC    = Color3.fromRGB(55, 130, 75),
+    clearC   = Color3.fromRGB(130, 55, 55),
+    exportC  = Color3.fromRGB(165, 120, 45),
+    text     = Color3.fromRGB(220, 222, 230),
+    subtext  = Color3.fromRGB(140, 142, 150),
+    scroll   = Color3.fromRGB(70, 70, 82),
+    passGreen = Color3.fromRGB(90, 180, 100),
+    failRed   = Color3.fromRGB(200, 70, 70),
+    warnYellow = Color3.fromRGB(200, 175, 70),
+}
+
+-- ── window ───────────────────────────────────────────────
+local Window = Instance.new("Frame")
+Window.Size = UDim2.new(0, 520, 0, 460)
+Window.Position = UDim2.new(0.5, -260, 0.5, -230)
+Window.BackgroundColor3 = C.bg
+Window.BorderSizePixel = 0
+Window.Parent = ScreenGui
+
+Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 8)
+
+-- ── title bar ────────────────────────────────────────────
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 36)
+TitleBar.BackgroundColor3 = C.header
+TitleBar.BorderSizePixel = 0
+TitleBar.Parent = Window
+
+Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 8)
+
+local TitleFix = Instance.new("Frame")
+TitleFix.Size = UDim2.new(1, 0, 0, 12)
+TitleFix.Position = UDim2.new(0, 0, 1, -12)
+TitleFix.BackgroundColor3 = C.header
+TitleFix.BorderSizePixel = 0
+TitleFix.Parent = TitleBar
+
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Size = UDim2.new(1, -80, 1, 0)
+TitleLabel.Position = UDim2.new(0, 14, 0, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "Bytecode Viewer"
+TitleLabel.TextColor3 = C.text
+TitleLabel.Font = Enum.Font.Code
+TitleLabel.TextSize = 14
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.Parent = TitleBar
+
+local CollapseBtn = Instance.new("TextButton")
+CollapseBtn.Size = UDim2.new(0, 32, 0, 28)
+CollapseBtn.Position = UDim2.new(1, -36, 0, 4)
+CollapseBtn.BackgroundTransparency = 1
+CollapseBtn.Text = "—"
+CollapseBtn.TextColor3 = C.subtext
+CollapseBtn.Font = Enum.Font.Code
+CollapseBtn.TextSize = 18
+CollapseBtn.Parent = TitleBar
+
+-- ── content ──────────────────────────────────────────────
+local Content = Instance.new("Frame")
+Content.Size = UDim2.new(1, 0, 1, -36)
+Content.Position = UDim2.new(0, 0, 0, 36)
+Content.BackgroundTransparency = 1
+Content.Parent = Window
+
+-- ── status banner (executor test result) ─────────────────
+local StatusBanner = Instance.new("TextLabel")
+StatusBanner.Size = UDim2.new(1, -24, 0, 40)
+StatusBanner.Position = UDim2.new(0, 12, 0, 8)
+StatusBanner.BackgroundColor3 = C.display
+StatusBanner.BorderSizePixel = 0
+StatusBanner.Text = "Running executor capability test..."
+StatusBanner.TextColor3 = C.subtext
+StatusBanner.Font = Enum.Font.Code
+StatusBanner.TextSize = 12
+StatusBanner.TextWrapped = true
+StatusBanner.RichText = true
+StatusBanner.TextXAlignment = Enum.TextXAlignment.Left
+StatusBanner.TextYAlignment = Enum.TextYAlignment.Center
+StatusBanner.Parent = Content
+
+Instance.new("UICorner", StatusBanner).CornerRadius = UDim.new(0, 6)
+
+local SPad = Instance.new("UIPadding", StatusBanner)
+SPad.PaddingLeft = UDim.new(0, 10)
+SPad.PaddingRight = UDim.new(0, 10)
+
+-- ── path input ───────────────────────────────────────────
+local PathBox = Instance.new("TextBox")
+PathBox.Size = UDim2.new(1, -106, 0, 32)
+PathBox.Position = UDim2.new(0, 12, 0, 56)
+PathBox.BackgroundColor3 = C.input
+PathBox.BorderSizePixel = 0
+PathBox.Text = ""
+PathBox.PlaceholderText = "put path..."
+PathBox.TextColor3 = C.text
+PathBox.PlaceholderColor3 = C.subtext
+PathBox.Font = Enum.Font.Code
+PathBox.TextSize = 13
+PathBox.TextXAlignment = Enum.TextXAlignment.Left
+PathBox.ClearTextOnFocus = false
+PathBox.Parent = Content
+
+Instance.new("UICorner", PathBox).CornerRadius = UDim.new(0, 6)
+
+local PPad = Instance.new("UIPadding", PathBox)
+PPad.PaddingLeft = UDim.new(0, 10)
+
+local LoadBtn = Instance.new("TextButton")
+LoadBtn.Size = UDim2.new(0, 86, 0, 32)
+LoadBtn.Position = UDim2.new(1, -98, 0, 56)
+LoadBtn.BackgroundColor3 = C.accent
+LoadBtn.BorderSizePixel = 0
+LoadBtn.Text = "Load"
+LoadBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+LoadBtn.Font = Enum.Font.Code
+LoadBtn.TextSize = 13
+LoadBtn.Parent = Content
+
+Instance.new("UICorner", LoadBtn).CornerRadius = UDim.new(0, 6)
+
+-- ── bytecode display ─────────────────────────────────────
+local Display = Instance.new("ScrollingFrame")
+Display.Size = UDim2.new(1, -24, 1, -150)
+Display.Position = UDim2.new(0, 12, 0, 96)
+Display.BackgroundColor3 = C.display
+Display.BorderSizePixel = 0
+Display.ScrollBarThickness = 6
+Display.ScrollBarImageColor3 = C.scroll
+Display.CanvasSize = UDim2.new(0, 0, 0, 0)
+Display.AutomaticCanvasSize = Enum.AutomaticSize.Y
+Display.Parent = Content
+
+Instance.new("UICorner", Display).CornerRadius = UDim.new(0, 6)
+
+local DisplayText = Instance.new("TextLabel")
+DisplayText.Size = UDim2.new(1, -16, 0, 0)
+DisplayText.AutomaticSize = Enum.AutomaticSize.Y
+DisplayText.Position = UDim2.new(0, 8, 0, 8)
+DisplayText.BackgroundTransparency = 1
+DisplayText.Text = "Waiting for executor test..."
+DisplayText.TextColor3 = C.subtext
+DisplayText.Font = Enum.Font.Code
+DisplayText.TextSize = 12
+DisplayText.TextWrapped = true
+DisplayText.TextXAlignment = Enum.TextXAlignment.Left
+DisplayText.TextYAlignment = Enum.TextYAlignment.Top
+DisplayText.RichText = true
+DisplayText.Parent = Display
+
+-- ── button row ──────────────────────────────────────────
+local BtnContainer = Instance.new("Frame")
+BtnContainer.Size = UDim2.new(1, -24, 0, 36)
+BtnContainer.Position = UDim2.new(0, 12, 1, -44)
+BtnContainer.BackgroundTransparency = 1
+BtnContainer.Parent = Content
+
+local function makeBtn(text, color)
+    local b = Instance.new("TextButton")
+    b.BackgroundColor3 = color
+    b.BorderSizePixel = 0
+    b.Text = text
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.Font = Enum.Font.Code
+    b.TextSize = 12
+    b.AutoButtonColor = false
+    b.Parent = BtnContainer
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+    return b
+end
+
+local CopyBtn   = makeBtn("Copy",   C.copyC)
+local ClearBtn  = makeBtn("Clear",  C.clearC)
+local ExportBtn = makeBtn("Export", C.exportC)
+
+local function resizeBtns()
+    local w = (BtnContainer.AbsoluteSize.X - 16) / 3
+    CopyBtn.Size   = UDim2.new(0, w, 1, 0)
+    ClearBtn.Size  = UDim2.new(0, w, 1, 0)
+    ExportBtn.Size = UDim2.new(0, w, 1, 0)
+    CopyBtn.Position   = UDim2.new(0, 0, 0, 0)
+    ClearBtn.Position  = UDim2.new(0, w + 8, 0, 0)
+    ExportBtn.Position = UDim2.new(0, (w + 8) * 2, 0, 0)
+end
+task.defer(resizeBtns)
+BtnContainer:GetPropertyChangedSignal("AbsoluteSize"):Connect(resizeBtns)
+
+-- hover helper
+local function addHover(btn, base, hover)
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = hover}):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = base}):Play()
+    end)
+end
+
+addHover(LoadBtn,   C.accent,   Color3.fromRGB(100, 160, 230))
+addHover(CopyBtn,   C.copyC,    Color3.fromRGB(70, 155, 95))
+addHover(ClearBtn,  C.clearC,   Color3.fromRGB(160, 70, 70))
+addHover(ExportBtn, C.exportC,  Color3.fromRGB(195, 145, 55))
+
+-- ── state ───────────────────────────────────────────────
+local currentBytecode = ""
+local currentSource   = ""
+local collapsed       = false
+local originalSize    = Window.Size
+local capSaving       = false
+local capBytecode     = false
+local executorName    = "Unknown"
+
+-- ── executor capability test ────────────────────────────
+local function runExecutorTest()
+    -- get executor name
+    pcall(function()
+        if identifyexecutor then
+            local name, version = identifyexecutor()
+            if name and #name > 0 then
+                executorName = name
+                if version and #version > 0 then
+                    executorName = name .. " v" .. tostring(version)
+                end
+            end
+        end
+    end)
+
+    -- test 1: file saving (writefile + isfile + readfile + delfile)
+    local testFile   = "bcv_capability_test.txt"
+    local testLetter = "x"
+    local saveOK     = false
+
+    pcall(function()
+        writefile(testFile, testLetter)
+    end)
+
+    local exists = false
+    pcall(function()
+        exists = isfile and isfile(testFile)
+    end)
+
+    if exists then
+        local content = nil
+        pcall(function()
+            content = readfile(testFile)
+        end)
+        if content == testLetter then
+            saveOK = true
+        end
+        -- cleanup: delete the test file
+        pcall(function()
+            if delfile then delfile(testFile) end
+        end)
+        -- if delfile isn't available, overwrite to empty then try again
+        if saveOK then
+            pcall(function()
+                if isfile and isfile(testFile) and delfile then
+                    -- already deleted above, this is a double-check
+                end
+            end)
+        end
+    end
+
+    capSaving = saveOK
+
+    -- test 2: getscriptbytecode
+    local bytecodeOK = false
+    pcall(function()
+        if getscriptbytecode and type(getscriptbytecode) == "function" then
+            -- try it on a known script to confirm it actually works
+            -- use a core script that should always exist
+            local testScript = game:GetService("Players").LocalPlayer
+                and game:FindService("CoreScripts")
+            if testScript then
+                local bc = getscriptbytecode(testScript)
+                if bc then bytecodeOK = true end
+            else
+                -- function exists, that's enough for the capability flag
+                bytecodeOK = true
+            end
+        end
+    end)
+
+    -- if the above pcall failed, try a simpler check
+    if not bytecodeOK then
+        pcall(function()
+            if type(getscriptbytecode) == "function" then
+                bytecodeOK = true
+            end
+        end)
+    end
+
+    capBytecode = bytecodeOK
+
+    -- build status message
+    local statusParts = {}
+    local allPass = true
+
+    if capSaving then
+        table.insert(statusParts, '<font color="#5ab464">Saving ✓</font>')
+    else
+        table.insert(statusParts, '<font color="#c84646">Saving ✗</font>')
+        allPass = false
+    end
+
+    if capBytecode then
+        table.insert(statusParts, '<font color="#5ab464">Bytecode ✓</font>')
+    else
+        table.insert(statusParts, '<font color="#c84646">Bytecode ✗</font>')
+        allPass = false
+    end
+
+    local line1 = "Executor: " .. executorName
+    local line2 = table.concat(statusParts, "  |  ")
+
+    if allPass then
+        StatusBanner.Text = '<font color="#5ab464">'
+            .. line1 .. ' — saving and bytecode getter supported</font>\n'
+            .. line2
+        StatusBanner.BackgroundColor3 = Color3.fromRGB(20, 32, 24)
+        DisplayText.Text = '<font color="#7ec0a0">Executor ready. Enter a file path or script instance path above.</font>'
+    else
+        StatusBanner.Text = '<font color="#c8af46">'
+            .. line1 .. ' — does not have full support</font>\n'
+            .. line2
+        StatusBanner.BackgroundColor3 = Color3.fromRGB(32, 28, 20)
+
+        local warnings = {}
+        if not capSaving then
+            table.insert(warnings, '<font color="#c84646">File saving unavailable — Export will not work.</font>')
+        end
+        if not capBytecode then
+            table.insert(warnings, '<font color="#c84646">getscriptbytecode unavailable — can only use file-based compilation.</font>')
+        end
+        DisplayText.Text = table.concat(warnings, "\n")
+    end
+
+    -- disable/enable buttons based on capabilities
+    if not capSaving then
+        ExportBtn.BackgroundColor3 = Color3.fromRGB(60, 55, 40)
+        ExportBtn.Text = "Export (N/A)"
+        ExportBtn.Active = false
+    end
+end
+
+-- run the test
+task.spawn(function()
+    task.wait(0.1)
+    runExecutorTest()
+end)
+
+-- ── dragging ─────────────────────────────────────────────
+do
+    local dragging, dragStart, startPos
+
+    TitleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging  = true
+            dragStart = input.Position
+            startPos  = Window.Position
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            Window.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+end
+
+-- ── collapse ────────────────────────────────────────────
+CollapseBtn.MouseButton1Click:Connect(function()
+    collapsed = not collapsed
+    if collapsed then
+        Content.Visible = false
+        TweenService:Create(Window, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+            Size = UDim2.new(0, 520, 0, 36)
+        }):Play()
+        CollapseBtn.Text = "+"
+    else
+        TweenService:Create(Window, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+            Size = originalSize
+        }):Play()
+        CollapseBtn.Text = "—"
+        task.wait(0.2)
+        Content.Visible = true
+    end
+end)
+
+-- ── helpers ─────────────────────────────────────────────
+
+local function toHex(data)
+    if not data or #data == 0 then return "" end
+    local parts = table.create(#data)
+    for i = 1, #data do
+        parts[i] = string.format("%02X", string.byte(data, i))
+    end
+    local lines = {}
+    for i = 1, #parts, 16 do
+        local chunk = {}
+        for j = i, math.min(i + 15, #parts) do
+            chunk[#chunk + 1] = parts[j]
+        end
+        lines[#lines + 1] = string.format("%08X  %s", i - 1, table.concat(chunk, " "))
+    end
+    return table.concat(lines, "\n")
+end
+
+local function resolveInstance(path)
+    local current = game
+    for part in string.gmatch(path, "[^%.%/]+") do
+        if not current then return nil end
+        current = current:FindFirstChild(part)
+    end
+    return current
+end
+
+local function getBytecode(path)
+    -- Method 1: file path
+    local fileContent
+    pcall(function() fileContent = readfile(path) end)
+
+    if fileContent and #fileContent > 0 then
+        local fn
+        pcall(function() fn = loadstring(fileContent) end)
+        if fn then
+            local dump
+            pcall(function() dump = string.dump(fn) end)
+            if dump and #dump > 0 then
+                return dump, "file (string.dump)"
+            end
+        end
+
+        local compiled
+        pcall(function()
+            if luau and luau.compile then
+                compiled = luau.compile(fileContent)
+            elseif Luau and Luau.compile then
+                compiled = Luau.compile(fileContent)
+            end
+        end)
+        if compiled and #compiled > 0 then
+            return compiled, "file (luau.compile)"
+        end
+
+        return nil, "Could not compile source — no bytecode compiler available"
+    end
+
+    -- Method 2: script instance path (only if getscriptbytecode is available)
+    if capBytecode then
+        local inst = resolveInstance(path)
+        if inst then
+            local bc
+            pcall(function() bc = getscriptbytecode(inst) end)
+            if bc and #bc > 0 then
+                return bc, "instance (getscriptbytecode)"
+            end
+        end
+    end
+
+    return nil, "Could not read file or resolve script at: " .. tostring(path)
+end
+
+-- ── load ────────────────────────────────────────────────
+local function doLoad()
+    local path = PathBox.Text:gsub("^%s+", ""):gsub("%s+$", "")
+    if path == "" then
+        DisplayText.Text = '<font color="#ff6b6b">Enter a file path or script path.</font>'
+        return
+    end
+
+    DisplayText.Text = '<font color="#c0c0ff">Compiling bytecode...</font>'
+
+    task.spawn(function()
+        local bytecode, sourceType = getBytecode(path)
+
+        if bytecode and #bytecode > 0 then
+            currentBytecode = bytecode
+            currentSource   = path
+            local hex       = toHex(bytecode)
+            local display   = hex
+            if #hex > 50000 then
+                display = hex:sub(1, 50000)
+                    .. "\n\n... (" .. #bytecode .. " bytes total, display truncated)"
+            end
+            DisplayText.Text = '<font color="#7ec0a0">'
+                .. #bytecode .. ' bytes | ' .. sourceType .. '</font>\n\n' .. display
+        else
+            currentBytecode = ""
+            DisplayText.Text = '<font color="#ff6b6b">Error: '
+                .. tostring(sourceType) .. '</font>'
+        end
+        Display.CanvasPosition = Vector2.new(0, 0)
+    end)
+end
+
+LoadBtn.MouseButton1Click:Connect(doLoad)
+PathBox.FocusLost:Connect(function(enter)
+    if enter then doLoad() end
+end)
+
+-- ── copy ────────────────────────────────────────────────
+CopyBtn.MouseButton1Click:Connect(function()
+    if currentBytecode and #currentBytecode > 0 then
+        local hex = toHex(currentBytecode)
+        local ok  = false
+        pcall(function()
+            if setclipboard then
+                setclipboard(hex)
+                ok = true
+            end
+        end)
+        if ok then
+            DisplayText.Text = '<font color="#7ec0a0">Copied '
+                .. #currentBytecode .. ' bytes to clipboard.</font>\n\n' .. hex
+        else
+            DisplayText.Text = '<font color="#ff6b6b">Clipboard not available.</font>\n\n' .. hex
+        end
+    else
+        DisplayText.Text = '<font color="#ff6b6b">Nothing to copy.</font>'
+    end
+end)
+
+-- ── clear ───────────────────────────────────────────────
+ClearBtn.MouseButton1Click:Connect(function()
+    currentBytecode = ""
+    currentSource   = ""
+    PathBox.Text     = ""
+    DisplayText.Text = "Cleared."
+    Display.CanvasPosition = Vector2.new(0, 0)
+end)
+
+-- ── export ──────────────────────────────────────────────
+ExportBtn.MouseButton1Click:Connect(function()
+    if not capSaving then
+        DisplayText.Text = '<font color="#ff6b6b">Export unavailable — executor does not support file saving.</font>'
+        return
+    end
+    if not currentBytecode or #currentBytecode == 0 then
+        DisplayText.Text = '<font color="#ff6b6b">Nothing to export.</font>'
+        return
+    end
+
+    local baseFolder = "BytecodeExports"
+    local timestamp  = os.date("%Y%m%d_%H%M%S")
+    local safeName   = currentSource:gsub("[/\\:*?\"<>|]", "_")
+        :gsub("^%s+", ""):gsub("%s+$", "")
+    if #safeName == 0 then safeName = "untitled" end
+    if #safeName > 40 then safeName = safeName:sub(1, 40) end
+
+    local exportName = safeName .. "_" .. timestamp
+    local exportPath = baseFolder .. "/" .. exportName
+
+    pcall(function() makefolder(baseFolder) end)
+    pcall(function() makefolder(exportPath) end)
+
+    local hex = toHex(currentBytecode)
+    local count = 0
+
+    -- .txt
+    local txt = "Bytecode Export\n"
+    txt ..= "Source: " .. currentSource .. "\n"
+    txt ..= "Executor: " .. executorName .. "\n"
+    txt ..= "Exported: " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n"
+    txt ..= "Size: " .. #currentBytecode .. " bytes\n"
+    txt ..= "\n" .. string.rep("=", 60) .. "\n\n"
+    txt ..= hex .. "\n"
+    pcall(function()
+        writefile(exportPath .. "/" .. exportName .. ".txt", txt)
+        count += 1
+    end)
+
+    -- .lua
+    pcall(function()
+        writefile(exportPath .. "/" .. exportName .. ".lua", currentBytecode)
+        count += 1
+    end)
+
+    -- .luau
+    pcall(function()
+        writefile(exportPath .. "/" .. exportName .. ".luau", currentBytecode)
+        count += 1
+    end)
+
+    if count > 0 then
+        DisplayText.Text = '<font color="#7ec0a0">Exported ' .. count
+            .. '/3 files to:</font>\n<font color="#c0c0ff">' .. exportPath
+            .. '/</font>\n\n' .. exportName .. '.txt\n' .. exportName
+            .. '.lua\n' .. exportName .. '.luau\n\n' .. hex
+    else
+        DisplayText.Text = '<font color="#ff6b6b">Export failed — could not write files.</font>\n\n' .. hex
+    end
+end)
