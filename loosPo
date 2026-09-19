@@ -1,9 +1,9 @@
--- ===== Kohl's Admin House X Script (v142) =====
-if _G.KAHX_VERSION and _G.KAHX_VERSION >= 142 then
+-- ===== Kohl's Admin House X Script (v143) =====
+if _G.KAHX_VERSION and _G.KAHX_VERSION >= 143 then
     if script then script:Destroy() end
     return
 end
-_G.KAHX_VERSION = 142
+_G.KAHX_VERSION = 143
 
 local commandPrefix = "."
 local silentPrefix = ".."
@@ -91,6 +91,7 @@ local platformLoop = nil
 local antiGearbanActive = false
 local antiLagActive = false
 local chatBinds = {}
+local cachedEndpoint = nil
 
 local stats = {
     playersKicked = 0, playersGearbanned = 0, playersPortaUsed = 0, playersJailed = 0,
@@ -292,7 +293,7 @@ local function resolveAllWithFriends(input, callback, includeSelf)
     resolvePlayerInput("all", callback, includeSelf)
 end
 
--- ===== F3X (Original big script approach - no hookmetamethod, no caching) =====
+-- ===== F3X (Cached endpoint, no hookmetamethod) =====
 local lastF3XTime = 0
 
 local function hasF3X()
@@ -314,17 +315,42 @@ local function ensureF3X()
 end
 
 local function getSyncAPI()
-    local tool = nil
-    local bp = LocalPlayer:FindFirstChild("Backpack")
-    if bp then tool = bp:FindFirstChild("Building Tools") end
-    if not tool then
-        local char = LocalPlayer.Character
-        if char then tool = char:FindFirstChild("Building Tools") end
+    -- Check cached endpoint
+    if cachedEndpoint and cachedEndpoint.Parent then
+        return cachedEndpoint
     end
-    if not tool then return nil end
-    local syncAPI = tool:FindFirstChild("SyncAPI")
-    if not syncAPI then return nil end
-    return syncAPI:FindFirstChild("ServerEndpoint")
+    cachedEndpoint = nil
+    -- Search backpack
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    if bp then
+        local tool = bp:FindFirstChild("Building Tools")
+        if tool then
+            local syncAPI = tool:FindFirstChild("SyncAPI")
+            if syncAPI then
+                local endpoint = syncAPI:FindFirstChild("ServerEndpoint")
+                if endpoint then
+                    cachedEndpoint = endpoint
+                    return endpoint
+                end
+            end
+        end
+    end
+    -- Search character
+    local char = LocalPlayer.Character
+    if char then
+        local tool = char:FindFirstChild("Building Tools")
+        if tool then
+            local syncAPI = tool:FindFirstChild("SyncAPI")
+            if syncAPI then
+                local endpoint = syncAPI:FindFirstChild("ServerEndpoint")
+                if endpoint then
+                    cachedEndpoint = endpoint
+                    return endpoint
+                end
+            end
+        end
+    end
+    return nil
 end
 
 local function f3x(args)
@@ -340,6 +366,7 @@ local function f3x(args)
     end
     if not endpoint then return nil end
     local s, r = pcall(function() return endpoint:InvokeServer(table.unpack(args)) end)
+    if not s then cachedEndpoint = nil end
     return s and r or nil
 end
 
@@ -1044,8 +1071,9 @@ LocalPlayer.CharacterAdded:Connect(function()
     end
 end)
 
--- ===== SKATEBOARD KICK =====
-Handler:AddCommand("skateboardkicksetup", {Args = {}, Aliases = {"sks"}, Description = "Skateboard kick setup"}, function()
+-- ===== SKATEBOARD KICK (Count support, gear me ID + name) =====
+Handler:AddCommand("skateboardkicksetup", {Args = {"*Count*"}, Aliases = {"sks"}, Description = "Skateboard kick setup"}, function(Arguments)
+    local count = tonumber(Arguments and Arguments[1]) or 1
     local sunraysParent = workspace:FindFirstChild("Realistic SunRays") or getHiddenParent()
     if Variables.SKickFolder and Variables.SKickFolder.Parent and Variables.SKickFolder:FindFirstChildOfClass("SkateboardPlatform") then
         return true
@@ -1056,7 +1084,10 @@ Handler:AddCommand("skateboardkicksetup", {Args = {}, Aliases = {"sks"}, Descrip
         if v.Name == "Skateboard" then table.insert(toRemove, v) end
     end
     f3x({"Remove", toRemove})
+    -- Use both gear me ID and gear me name
     chatSystem("gear me 27902303")
+    task.wait(0.1)
+    chatSystem("gear me ROBLOXSkateboard")
     local tool = nil
     local timeout = os.clock() + 10
     while not tool and os.clock() < timeout do
@@ -1091,13 +1122,28 @@ Handler:AddCommand("skateboardkicksetup", {Args = {}, Aliases = {"sks"}, Descrip
             repeat task.wait(0.01) until (tempFolder and platform.Parent == tempFolder) or os.clock() > to
             f3x({"Ungroup", {tempFolder}})
         end
-        local bloomParent = workspace:FindFirstChild("Realistic Bloom")
-        if bloomParent and bloomParent ~= sunraysParent then
-            pcall(function() f3x({"Clone", {Variables.SKickFolder}, bloomParent}) end)
-        end
-        local ccParent = workspace:FindFirstChild("Realistic ColorCorrection")
-        if ccParent and ccParent ~= sunraysParent then
-            pcall(function() f3x({"Clone", {Variables.SKickFolder}, ccParent}) end)
+        -- Clone to multiple hidden parents based on count
+        if count > 1 then
+            local cloneParents = {
+                workspace:FindFirstChild("Realistic Bloom"),
+                workspace:FindFirstChild("Realistic ColorCorrection"),
+                Workspace.Terrain,
+                Workspace.Terrain,
+                Workspace.Terrain,
+                Workspace.Terrain,
+                Workspace.Terrain,
+                Workspace.Terrain,
+                Workspace.Terrain,
+                Workspace.Terrain,
+            }
+            for i = 2, count do
+                local cloneParent = cloneParents[i - 1]
+                if not cloneParent then cloneParent = Workspace.Terrain end
+                if cloneParent and cloneParent ~= sunraysParent then
+                    pcall(function() f3x({"Clone", {Variables.SKickFolder}, cloneParent}) end)
+                end
+            end
+            notify("SKS", "Created " .. count .. " setups", 3)
         end
     end
     f3x({"Remove", {model}})
@@ -1166,8 +1212,9 @@ Handler:AddCommand("skateboardkick", {Args = {"*Player*"}, Aliases = {"skick", "
     end, false)
 end)
 
--- ===== POTATO KICK (Uses gear me ??) =====
-Handler:AddCommand("potatokicksetup", {Args = {}, Aliases = {"pks", "crash2setup"}, Description = "Potato kick setup"}, function()
+-- ===== POTATO KICK (Count support, uses gear me ??) =====
+Handler:AddCommand("potatokicksetup", {Args = {"*Count*"}, Aliases = {"pks", "crash2setup"}, Description = "Potato kick setup"}, function(Arguments)
+    local count = tonumber(Arguments and Arguments[1]) or 1
     if Variables.PKS and Variables.PKS.Parent then return true end
     pksSetupInProgress = true
     local hiddenParent = getHiddenParent()
@@ -1206,6 +1253,29 @@ Handler:AddCommand("potatokicksetup", {Args = {}, Aliases = {"pks", "crash2setup
     tool.Parent = LocalPlayer.Character
     f3x({"SetParent", {tool}, Variables.PKS})
     f3x({"SetName", {tool}, randomString(math.random(1, 100))})
+    -- Clone to multiple hidden parents based on count
+    if count > 1 then
+        local cloneParents = {
+            workspace:FindFirstChild("Realistic Bloom"),
+            workspace:FindFirstChild("Realistic ColorCorrection"),
+            Workspace.Terrain,
+            Workspace.Terrain,
+            Workspace.Terrain,
+            Workspace.Terrain,
+            Workspace.Terrain,
+            Workspace.Terrain,
+            Workspace.Terrain,
+            Workspace.Terrain,
+        }
+        for i = 2, count do
+            local cloneParent = cloneParents[i - 1]
+            if not cloneParent then cloneParent = Workspace.Terrain end
+            if cloneParent and cloneParent ~= hiddenParent then
+                pcall(function() f3x({"Clone", {Variables.PKS}, cloneParent}) end)
+            end
+        end
+        notify("PKS", "Created " .. count .. " setups", 3)
+    end
     pksSetupInProgress = false
     return Variables.PKS ~= nil
 end)
@@ -1508,7 +1578,7 @@ local function porta(targetName)
     end
 end
 
--- ===== ADMIN PADS =====
+-- ===== ADMIN PADS (Improved - less delay) =====
 local adminPads = {}
 local clickDetector = nil
 
@@ -1552,7 +1622,7 @@ local function startAutoAdmin()
                     local head = pad:FindFirstChild("Head")
                     if head and head:IsA("BasePart") then
                         local origCF = head.CFrame
-                        local timeout = os.clock() + 10
+                        local timeout = os.clock() + 8
                         while monitorLoopActive and os.clock() < timeout do
                             local currentHrp = getHRP()
                             if not currentHrp then break end
@@ -1565,13 +1635,13 @@ local function startAutoAdmin()
                                 f3x({"SyncMove", {{Part = head, CFrame = origCF}}})
                                 break
                             end
-                            task.wait(0.05)
+                            task.wait(0.03)
                         end
                         f3x({"SyncMove", {{Part = head, CFrame = origCF}}})
                     end
                 end
             end
-            task.wait(1)
+            task.wait(0.3)
         end
         autoAdminThread = nil
     end)
@@ -1601,7 +1671,7 @@ local function claimAllAdminPads()
                         firetouchinterest(head, hrp, 0)
                         firetouchinterest(head, hrp, 1)
                     end)
-                    task.wait(0.05)
+                    task.wait(0.03)
                 end
             end)
             local elapsed = 0
@@ -1632,9 +1702,9 @@ Handler:AddCommand("silentsetup", {Args = {}, Aliases = {"ss"}, Description = "S
         chatSystem("freeze me")
         task.wait(0.5)
         notify("Silent Setup", "Setting up Skateboard...", 3)
-        Handler.Commands["skateboardkicksetup"].callback()
+        Handler.Commands["skateboardkicksetup"].callback({}, "")
         notify("Silent Setup", "Setting up Potato...", 3)
-        Handler.Commands["potatokicksetup"].callback()
+        Handler.Commands["potatokicksetup"].callback({}, "")
         task.wait(0.5)
         hrp.CFrame = origCF
         chatSystem("thaw me")
@@ -1651,7 +1721,7 @@ task.spawn(function()
                     serverLockPanicSk = true
                     notify("ServerLock Panic", "Recreating Skateboard setup...", 3)
                     task.spawn(function()
-                        Handler.Commands["skateboardkicksetup"].callback()
+                        Handler.Commands["skateboardkicksetup"].callback({}, "")
                         serverLockPanicSk = false
                     end)
                 end
@@ -1661,7 +1731,7 @@ task.spawn(function()
                     serverLockPanicPk = true
                     notify("ServerLock Panic", "Recreating Potato setup...", 3)
                     task.spawn(function()
-                        Handler.Commands["potatokicksetup"].callback()
+                        Handler.Commands["potatokicksetup"].callback({}, "")
                         serverLockPanicPk = false
                     end)
                 end
@@ -2113,9 +2183,9 @@ Handler:AddCommand("prefix", {Args = {"*Prefix*"}, Aliases = {}, Description = "
 end)
 
 Handler:AddCommand("commands", {Args = {}, Aliases = {"cmds", "help", "scmds"}, Description = "Show commands"}, function()
-    print("=== Commands (v142) ===")
+    print("=== Commands (v143) ===")
     print("Prefix: . (normal) .. (silent) | Targets: all, others, me, random, friends, nonfriends")
-    print("KICKS: .sks .skick/.sk/.kick .pks .pkick/.pk/.crash2 .crash/.ck .dualkick/.dk .ss")
+    print("KICKS: .sks [count] .skick/.sk/.kick .pks [count] .pkick/.pk/.crash2 .crash/.ck .dualkick/.dk .ss")
     print("BAN: .ban .unban .serverlock .unserverlock")
     print("CLEAR: .clr .clrall .clrall2 .clrmodels .clrsounds .clrsmoke .clrfire .clrsparkles .clrdecals .clrtextures .clremitters .clrlights .clrwelds .clrconstraints .clrattachments .clrselectionboxes .clrhighlights .clrmeshes .clrbeams .clrtrails .clrfolders .clreffects .clrtext .clrbillboards .clrnpc .clrws .clruig .clrbodies .adminclr .delmesh .trollclr .unanc .nocol")
     print("ANTI (self): .antikick .whitesks .antipunish .antideath .antijail .antiblind .antiall .gearblacklist")
@@ -2231,7 +2301,7 @@ local function uiStat(parent, props)
 end
 
 -- ===== UI =====
-window = Rayfield:CreateWindow({Name = gameName, Subtitle = "Kohl's Admin House X v142"})
+window = Rayfield:CreateWindow({Name = gameName, Subtitle = "Kohl's Admin House X v143"})
 if not window then return end
 
 -- ===================== MAIN TAB =====================
@@ -2271,16 +2341,22 @@ uiInput(mainTab, {Name = "Dual Kick", Placeholder = "Player name or all", ClearT
 end})
 
 uiDivider(mainTab, "Setups")
+-- SKS count + button
+local sksCount = ""
+uiInput(mainTab, {Name = "SKS Count", Placeholder = "How many (default 1)", ClearTextOnFocus = false, Callback = function(text) sksCount = text end})
+uiButton(mainTab, {Name = "Skateboard Setup (.sks [count])", Callback = function()
+    local cmd = Handler.Commands["skateboardkicksetup"]
+    if cmd then task.spawn(function() cmd.callback({sksCount}, "") end) end
+end})
+-- PKS count + button
+local pksCount = ""
+uiInput(mainTab, {Name = "PKS Count", Placeholder = "How many (default 1)", ClearTextOnFocus = false, Callback = function(text) pksCount = text end})
+uiButton(mainTab, {Name = "Potato Setup (.pks [count])", Callback = function()
+    local cmd = Handler.Commands["potatokicksetup"]
+    if cmd then task.spawn(function() cmd.callback({pksCount}, "") end) end
+end})
 uiButton(mainTab, {Name = "Silent Setup Both (.ss)", Callback = function()
     local cmd = Handler.Commands["silentsetup"]
-    if cmd then task.spawn(function() cmd.callback({}, "") end) end
-end})
-uiButton(mainTab, {Name = "Skateboard Setup (.sks)", Callback = function()
-    local cmd = Handler.Commands["skateboardkicksetup"]
-    if cmd then task.spawn(function() cmd.callback({}, "") end) end
-end})
-uiButton(mainTab, {Name = "Potato Setup (.pks)", Callback = function()
-    local cmd = Handler.Commands["potatokicksetup"]
     if cmd then task.spawn(function() cmd.callback({}, "") end) end
 end})
 uiButton(mainTab, {Name = "Delete Skateboard Setup", Callback = function()
@@ -2767,7 +2843,7 @@ task.spawn(function()
     end
 end)
 
--- ===== CHAT COMMANDS (TextChatService ONLY - no hookmetamethod, F3X completely untouched) =====
+-- ===== CHAT COMMANDS (TextChatService ONLY - no hookmetamethod) =====
 local function processCommand(msg)
     local lowerMsg = string.lower(msg)
     local parts = string.split(lowerMsg, " ")
@@ -2836,5 +2912,5 @@ task.spawn(function()
     startAntiGearban()
 end)
 
-notify("Welcome", LocalPlayer.DisplayName .. " — v142!", 5)
-print("[Kohl's Admin House X] Loaded v142!")
+notify("Welcome", LocalPlayer.DisplayName .. " — v143!", 5)
+print("[Kohl's Admin House X] Loaded v143!")
