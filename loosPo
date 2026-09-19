@@ -1,9 +1,9 @@
--- ===== Kohl's Admin House X Script (v140) =====
-if _G.KAHX_VERSION and _G.KAHX_VERSION >= 140 then
+-- ===== Kohl's Admin House X Script (v142) =====
+if _G.KAHX_VERSION and _G.KAHX_VERSION >= 142 then
     if script then script:Destroy() end
     return
 end
-_G.KAHX_VERSION = 140
+_G.KAHX_VERSION = 142
 
 local commandPrefix = "."
 local silentPrefix = ".."
@@ -90,7 +90,6 @@ local platformPart = nil
 local platformLoop = nil
 local antiGearbanActive = false
 local antiLagActive = false
-local undeletableConn = nil
 local chatBinds = {}
 
 local stats = {
@@ -101,8 +100,7 @@ local ICONS = {main = 1436097318, antis = 1436097318, clear = 1436097318, binds 
 
 local Variables = {
     SKickFolder = nil, PKS = nil, AntiKick = false, GearBlacklist = nil, ServerLock = nil,
-    ServerLockWhitelistFriends = false, ServerLockWhitelistIDs = {},
-    UndeletableActive = false, UndeletableFolders = {}, UndeletableBackupFolder = nil, UndeletableBackups = {}
+    ServerLockWhitelistFriends = false, ServerLockWhitelistIDs = {}
 }
 
 local WhitelistedSKS = {}
@@ -294,49 +292,63 @@ local function resolveAllWithFriends(input, callback, includeSelf)
     resolvePlayerInput("all", callback, includeSelf)
 end
 
--- ===== F3X (Rewritten based on Sol script - uses WaitForChild, btools me) =====
-local function f3x(args)
-    if not args then return nil end
-    local tool = nil
-    -- Check Backpack first
+-- ===== F3X (Original big script approach - no hookmetamethod, no caching) =====
+local lastF3XTime = 0
+
+local function hasF3X()
     local bp = LocalPlayer:FindFirstChild("Backpack")
-    if bp then
-        tool = bp:FindFirstChild("Building Tools")
+    if bp and bp:FindFirstChild("Building Tools") then return true end
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("Building Tools") then return true end
+    return false
+end
+
+local function ensureF3X()
+    if not hasF3X() then
+        local now = tick()
+        if (now - lastF3XTime) >= 0.5 then
+            chatSystem("startergive self")
+            lastF3XTime = now
+        end
     end
-    -- Check Character
+end
+
+local function getSyncAPI()
+    local tool = nil
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    if bp then tool = bp:FindFirstChild("Building Tools") end
     if not tool then
         local char = LocalPlayer.Character
-        if char then
-            tool = char:FindFirstChild("Building Tools")
-        end
-    end
-    -- If not found, request btools and wait
-    if not tool then
-        chatSystem("btools me")
-        if bp then
-            tool = bp:WaitForChild("Building Tools", 5)
-        else
-            local newBp = LocalPlayer:WaitForChild("Backpack", 3)
-            if newBp then
-                tool = newBp:WaitForChild("Building Tools", 5)
-            end
-        end
+        if char then tool = char:FindFirstChild("Building Tools") end
     end
     if not tool then return nil end
-    -- Use WaitForChild for SyncAPI and ServerEndpoint (key fix from Sol script)
-    local syncAPI = tool:WaitForChild("SyncAPI", 5)
+    local syncAPI = tool:FindFirstChild("SyncAPI")
     if not syncAPI then return nil end
-    local endpoint = syncAPI:WaitForChild("ServerEndpoint", 5)
+    return syncAPI:FindFirstChild("ServerEndpoint")
+end
+
+local function f3x(args)
+    local endpoint = getSyncAPI()
+    if not endpoint then
+        ensureF3X()
+        local waited = 0
+        while not endpoint and waited < 3 do
+            task.wait(0.1)
+            waited = waited + 0.1
+            endpoint = getSyncAPI()
+        end
+    end
     if not endpoint then return nil end
-    local s, r = pcall(function()
-        return endpoint:InvokeServer(table.unpack(args))
-    end)
+    local s, r = pcall(function() return endpoint:InvokeServer(table.unpack(args)) end)
     return s and r or nil
 end
 
 local function deleteInstances(instances)
     if type(instances) ~= "table" then instances = {instances} end
     if #instances == 0 then return 0 end
+    local endpoint = getSyncAPI()
+    if not endpoint then ensureF3X() endpoint = getSyncAPI() end
+    if not endpoint then return 0 end
     local valid = {}
     for _, v in ipairs(instances) do
         if v and v:IsA("Instance") then table.insert(valid, v) end
@@ -346,8 +358,7 @@ local function deleteInstances(instances)
     for i = 1, #valid, 5000 do
         local batch = {}
         for j = i, math.min(i + 4999, #valid) do table.insert(batch, valid[j]) end
-        pcall(function() f3x({"Remove", batch}) end)
-        total = total + #batch
+        if pcall(function() endpoint:InvokeServer("Remove", batch) end) then total = total + #batch end
         task.wait(0.01)
     end
     return total
@@ -367,9 +378,11 @@ end
 
 -- ===== CLEAR FUNCTIONS =====
 local function clearByFilter(filterFunc, exc, ext, etb, ekf)
-    local instances = {}
+    local endpoint = getSyncAPI()
+    if not endpoint then return 0 end
     local terrain = Workspace:FindFirstChild("Terrain")
     local tabby = Workspace:FindFirstChild("Tabby")
+    local instances = {}
     for _, v in pairs(Workspace:GetDescendants()) do
         if filterFunc(v) then
             local skip = false
@@ -388,7 +401,7 @@ local function clearByFilter(filterFunc, exc, ext, etb, ekf)
     for i = 1, #instances, 5000 do
         local batch = {}
         for j = i, math.min(i + 4999, #instances) do table.insert(batch, instances[j]) end
-        pcall(function() f3x({"Remove", batch}) end)
+        pcall(function() endpoint:InvokeServer("Remove", batch) end)
         task.wait(0.01)
     end
     return #instances
@@ -497,6 +510,8 @@ local function getFilteredParts()
 end
 
 local function syncParts(parts, unanchor, nocol)
+    local endpoint = getSyncAPI()
+    if not endpoint then return end
     local batch = {}
     for i, v in ipairs(parts) do
         local entry = {Part = v}
@@ -504,15 +519,15 @@ local function syncParts(parts, unanchor, nocol)
         if nocol then entry.CanCollide = false end
         table.insert(batch, entry)
         if #batch == 5000 then
-            if unanchor then pcall(function() f3x({"SyncAnchor", batch}) end) end
-            if nocol then pcall(function() f3x({"SyncCollision", batch}) end) end
+            if unanchor then pcall(function() endpoint:InvokeServer("SyncAnchor", batch) end) end
+            if nocol then pcall(function() endpoint:InvokeServer("SyncCollision", batch) end) end
             batch = {}
             task.wait(0.01)
         end
     end
     if #batch > 0 then
-        if unanchor then pcall(function() f3x({"SyncAnchor", batch}) end) end
-        if nocol then pcall(function() f3x({"SyncCollision", batch}) end) end
+        if unanchor then pcall(function() endpoint:InvokeServer("SyncAnchor", batch) end) end
+        if nocol then pcall(function() endpoint:InvokeServer("SyncCollision", batch) end) end
     end
 end
 
@@ -534,56 +549,6 @@ Handler:AddCommand("delmesh", {Args = {}, Aliases = {}, Description = "Delete me
         notify(".delmesh", "Removed " .. c .. " meshes", 3)
     end)
 end)
-
--- ===== UNDELETABLE BUILDS =====
-local function InitUndeletableSystem()
-    if Variables.UndeletableFolders[1] then return end
-    local parent = getHiddenParent()
-    if not parent then notify("Undeletable Error", "No hidden parent.", 5) return end
-    for i = 1, 8 do
-        local folder = f3x({"CreateGroup", "Folder", parent, {}})
-        if folder then
-            folder.Name = randomString(20)
-            Variables.UndeletableFolders[i] = folder
-            parent = folder
-        else
-            notify("Undeletable Error", "Failed folder " .. i, 5)
-            return
-        end
-        task.wait(0.05)
-    end
-    local backup = f3x({"CreateGroup", "Folder", getHiddenParent(), {}})
-    if backup then
-        backup.Name = randomString(20)
-        Variables.UndeletableBackupFolder = backup
-    end
-    notify("Undeletable", "Created " .. #Variables.UndeletableFolders .. " folders", 3)
-end
-
-local function enableUndeletableListener()
-    if undeletableConn then undeletableConn:Disconnect() end
-    undeletableConn = Workspace.DescendantAdded:Connect(function(obj)
-        if not Variables.UndeletableActive then return end
-        if #Variables.UndeletableFolders == 0 then return end
-        local validNames = {Part = true, Truss = true, Wedge = true, CornerWedge = true, Seat = true}
-        if obj:IsA("BasePart") and validNames[obj.Name] then
-            local inFolder = false
-            for _, folder in ipairs(Variables.UndeletableFolders) do
-                if obj:IsDescendantOf(folder) then inFolder = true break end
-            end
-            if not inFolder and not (Variables.UndeletableBackupFolder and obj:IsDescendantOf(Variables.UndeletableBackupFolder)) then
-                local targetFolder = Variables.UndeletableFolders[math.random(1, #Variables.UndeletableFolders)]
-                if targetFolder then
-                    f3x({"SetParent", {obj}, targetFolder})
-                end
-            end
-        end
-    end)
-end
-
-local function disableUndeletableListener()
-    if undeletableConn then undeletableConn:Disconnect() undeletableConn = nil end
-end
 
 -- ===== ANTI FEATURES =====
 local function startKillbrickImmunity()
@@ -931,7 +896,6 @@ local function sendUnjail(player)
     end
 end
 
--- Anti jail for self and others (detection-based via sendUnjail)
 task.spawn(function()
     while monitorLoopActive do
         sendUnjail(LocalPlayer)
@@ -943,7 +907,6 @@ task.spawn(function()
     end
 end)
 
--- Anti punish for others (detection-based: checks if character is in Lighting)
 task.spawn(function()
     while monitorLoopActive do
         for name, _ in pairs(protectedPlayers) do
@@ -961,7 +924,6 @@ task.spawn(function()
     end
 end)
 
--- Anti blind for others (detection-based: checks PlayerGui for EFFECTGUIBLIND)
 task.spawn(function()
     while monitorLoopActive do
         for _, name in ipairs(antiBlindTargets) do
@@ -981,7 +943,6 @@ task.spawn(function()
     end
 end)
 
--- Anti death for others (detection-based: checks health, uses "reset" not "re")
 task.spawn(function()
     while monitorLoopActive do
         for _, name in ipairs(antiDeathTargets) do
@@ -998,7 +959,6 @@ task.spawn(function()
     end
 end)
 
--- Self anti death
 local wasAlive = true
 local debounce = false
 task.spawn(function()
@@ -1026,7 +986,6 @@ task.spawn(function()
     end
 end)
 
--- Gear blacklist
 task.spawn(function()
     while monitorLoopActive do
         if Variables.GearBlacklist then
@@ -1085,7 +1044,7 @@ LocalPlayer.CharacterAdded:Connect(function()
     end
 end)
 
--- ===== SKATEBOARD KICK (Creates in SunRays, clones to Bloom + ColorCorrection) =====
+-- ===== SKATEBOARD KICK =====
 Handler:AddCommand("skateboardkicksetup", {Args = {}, Aliases = {"sks"}, Description = "Skateboard kick setup"}, function()
     local sunraysParent = workspace:FindFirstChild("Realistic SunRays") or getHiddenParent()
     if Variables.SKickFolder and Variables.SKickFolder.Parent and Variables.SKickFolder:FindFirstChildOfClass("SkateboardPlatform") then
@@ -1207,7 +1166,7 @@ Handler:AddCommand("skateboardkick", {Args = {"*Player*"}, Aliases = {"skick", "
     end, false)
 end)
 
--- ===== POTATO KICK (Uses gear me ?? - user confirmed it works) =====
+-- ===== POTATO KICK (Uses gear me ??) =====
 Handler:AddCommand("potatokicksetup", {Args = {}, Aliases = {"pks", "crash2setup"}, Description = "Potato kick setup"}, function()
     if Variables.PKS and Variables.PKS.Parent then return true end
     pksSetupInProgress = true
@@ -1232,7 +1191,6 @@ Handler:AddCommand("potatokicksetup", {Args = {}, Aliases = {"pks", "crash2setup
     Variables.PKS = pl
     f3x({"SetName", {Variables.PKS}, randomString(math.random(1, 100))})
     f3x({"Ungroup", {tempPart}})
-    -- Use gear me ?? (user confirmed it works now)
     chatSystem("gear me ??")
     local tool = nil
     local timeout = os.clock() + 10
@@ -2155,7 +2113,7 @@ Handler:AddCommand("prefix", {Args = {"*Prefix*"}, Aliases = {}, Description = "
 end)
 
 Handler:AddCommand("commands", {Args = {}, Aliases = {"cmds", "help", "scmds"}, Description = "Show commands"}, function()
-    print("=== Commands (v140) ===")
+    print("=== Commands (v142) ===")
     print("Prefix: . (normal) .. (silent) | Targets: all, others, me, random, friends, nonfriends")
     print("KICKS: .sks .skick/.sk/.kick .pks .pkick/.pk/.crash2 .crash/.ck .dualkick/.dk .ss")
     print("BAN: .ban .unban .serverlock .unserverlock")
@@ -2273,7 +2231,7 @@ local function uiStat(parent, props)
 end
 
 -- ===== UI =====
-window = Rayfield:CreateWindow({Name = gameName, Subtitle = "Kohl's Admin House X v140"})
+window = Rayfield:CreateWindow({Name = gameName, Subtitle = "Kohl's Admin House X v142"})
 if not window then return end
 
 -- ===================== MAIN TAB =====================
@@ -2552,20 +2510,6 @@ uiToggle(antisTab, {Name = "Anti-Death (Self)", Value = true, Callback = functio
     suppressRe = not v
 end})
 
-uiToggle(antisTab, {Name = "Undeletable Build", Value = false, Callback = function(v)
-    Variables.UndeletableActive = v
-    if v then
-        InitUndeletableSystem()
-        if #Variables.UndeletableFolders > 0 then
-            enableUndeletableListener()
-            notify("Undeletable", "Enabled. New parts moved to folders.", 3)
-        end
-    else
-        disableUndeletableListener()
-        notify("Undeletable", "Disabled", 3)
-    end
-end})
-
 uiDivider(antisTab, "Anti For Other Players")
 uiText(antisTab, {Name = "Info", Text = "Anti Kick and Anti Gearban cannot be done for others. Only Anti Jail, Anti Punish, Anti Death, and Anti Blind."})
 
@@ -2823,14 +2767,13 @@ task.spawn(function()
     end
 end)
 
--- ===== CHAT HOOKS & F3X HOOKS =====
+-- ===== CHAT COMMANDS (TextChatService ONLY - no hookmetamethod, F3X completely untouched) =====
 local function processCommand(msg)
     local lowerMsg = string.lower(msg)
     local parts = string.split(lowerMsg, " ")
     local cmd = parts[1]
     local playerArg = parts[2]
     if not cmd or cmd == "" then return end
-    -- Check chat binds first
     if chatBinds[cmd] then
         cmd = chatBinds[cmd]
     end
@@ -2848,64 +2791,6 @@ local function processCommand(msg)
         end)
     end
 end
-
-local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-    if chatCmdsEnabled and self == ChatEvent and getnamecallmethod() == "FireServer" and typeof(({...})[1]) == "string" then
-        local msg = ({...})[1]
-        local isSilent = false
-        local cmdStr = ""
-        if string.sub(msg, 1, #silentPrefix) == silentPrefix then
-            isSilent = true
-            cmdStr = string.sub(msg, #silentPrefix + 1)
-        elseif string.sub(msg, 1, #commandPrefix) == commandPrefix then
-            cmdStr = string.sub(msg, #commandPrefix + 1)
-        else
-            return oldNamecall(self, ...)
-        end
-        processCommand(cmdStr)
-        if isSilent or silentCommands then
-            return nil
-        end
-        return oldNamecall(self, ...)
-    end
-
-    -- Undeletable Remove filter only (NO CreatePart interception)
-    if getnamecallmethod() == "InvokeServer" and self:IsA("RemoteFunction") then
-        local parent = self.Parent
-        if parent and parent.Name == "SyncAPI" and parent.Parent and parent.Parent.Name == "Building Tools" then
-            local args = {...}
-            if Variables.UndeletableActive and args[1] == "Remove" then
-                local toRemove = args[2]
-                if type(toRemove) == "table" then
-                    local filtered = {}
-                    for _, item in ipairs(toRemove) do
-                        local isUndeletable = false
-                        for _, folder in ipairs(Variables.UndeletableFolders) do
-                            if item == folder or (item.IsDescendantOf and item:IsDescendantOf(folder)) then
-                                isUndeletable = true
-                                break
-                            end
-                        end
-                        if item == Variables.UndeletableBackupFolder or (item.IsDescendantOf and item:IsDescendantOf(Variables.UndeletableBackupFolder)) then
-                            isUndeletable = true
-                        end
-                        if not isUndeletable then
-                            table.insert(filtered, item)
-                        end
-                    end
-                    if #filtered == 0 then
-                        return nil
-                    end
-                    args[2] = filtered
-                    return oldNamecall(self, table.unpack(args))
-                end
-            end
-        end
-    end
-
-    return oldNamecall(self, ...)
-end)
 
 pcall(function()
     TextChatService.SendingMessage:Connect(function(message)
@@ -2931,7 +2816,7 @@ end)
 
 -- ===== STARTUP =====
 if ChatEvent then
-    pcall(function() ChatEvent:FireServer("btools me", "System") end)
+    pcall(function() ChatEvent:FireServer("startergive self", "System") end)
 end
 
 task.spawn(function()
@@ -2951,5 +2836,5 @@ task.spawn(function()
     startAntiGearban()
 end)
 
-notify("Welcome", LocalPlayer.DisplayName .. " — v140!", 5)
-print("[Kohl's Admin House X] Loaded v140!")
+notify("Welcome", LocalPlayer.DisplayName .. " — v142!", 5)
+print("[Kohl's Admin House X] Loaded v142!")
