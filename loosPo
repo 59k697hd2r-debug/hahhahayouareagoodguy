@@ -1,9 +1,9 @@
--- ===== Kohl's Admin House X Script (v146) =====
-if _G.KAHX_VERSION and _G.KAHX_VERSION >= 146 then
+-- ===== Kohl's Admin House X Script (v147) =====
+if _G.KAHX_VERSION and _G.KAHX_VERSION >= 147 then
     if script then script:Destroy() end
     return
 end
-_G.KAHX_VERSION = 146
+_G.KAHX_VERSION = 147
 
 local commandPrefix = "."
 local silentPrefix = ".."
@@ -294,7 +294,7 @@ local function resolveAllWithFriends(input, callback, includeSelf)
     resolvePlayerInput("all", callback, includeSelf)
 end
 
--- ===== F3X (startergive self via ensureF3X, cached endpoint) =====
+-- ===== F3X =====
 local function hasF3X()
     local bp = LocalPlayer:FindFirstChild("Backpack")
     if bp and bp:FindFirstChild("Building Tools") then return true end
@@ -1595,7 +1595,7 @@ local function porta(targetName)
     end
 end
 
--- ===== ADMIN PADS (Client-side CFrame + firetouchinterest, no F3X needed) =====
+-- ===== ADMIN PADS (Client-side CFrame, CanCollide off, regen if all claimed, selects unclaimed only) =====
 local adminPads = {}
 local clickDetector = nil
 
@@ -1629,25 +1629,36 @@ local function startAutoAdmin()
         while monitorLoopActive do
             local hrp = getHRP()
             if hrp then
-                -- Find pads we don't own
+                -- Find UNCLAIMED pads (Dark green BrickColor) that we don't own
                 local targetPads = {}
+                local allClaimed = true
+                local ourPads = 0
                 for _, pad in ipairs(adminPads) do
                     local head = pad:FindFirstChild("Head")
-                    if head and head:IsA("BasePart") and not padIsOurs(pad) then
-                        table.insert(targetPads, pad)
+                    if head and head:IsA("BasePart") then
+                        if padIsOurs(pad) then
+                            ourPads = ourPads + 1
+                        elseif head.BrickColor == BrickColor.new("Dark green") then
+                            table.insert(targetPads, pad)
+                            allClaimed = false
+                        end
                     end
                 end
+
                 if #targetPads > 0 then
-                    -- Pick 1 random pad
+                    -- Pick 1 random unclaimed pad
                     local pad = targetPads[math.random(1, #targetPads)]
                     local head = pad:FindFirstChild("Head")
                     if head and head:IsA("BasePart") then
                         local origCF = head.CFrame
+                        local origCanCollide = head.CanCollide
+                        -- Turn OFF collisions while claiming
+                        head.CanCollide = false
                         local timeout = os.clock() + 5
                         while monitorLoopActive and os.clock() < timeout do
                             local currentHrp = getHRP()
                             if not currentHrp then break end
-                            -- Set head CFrame to HRP on CLIENT (no F3X needed, instant)
+                            -- Set head CFrame to HRP on CLIENT
                             head.CFrame = currentHrp.CFrame
                             -- Fire touch interest while head is at HRP position
                             pcall(function()
@@ -1656,14 +1667,21 @@ local function startAutoAdmin()
                             end)
                             -- Check if we claimed it via Owner StringValue
                             if padIsOurs(pad) then
-                                -- Reset head CFrame to original on client
-                                head.CFrame = origCF
                                 break
                             end
                             task.wait()
                         end
-                        -- Always reset head CFrame to original on client
+                        -- Reset head to original position and turn collisions back ON
                         head.CFrame = origCF
+                        head.CanCollide = origCanCollide
+                    end
+                elseif allClaimed and ourPads == 0 then
+                    -- All pads claimed but we don't own any → regen pads
+                    if clickDetector then
+                        clickDetector.MaxActivationDistance = 99999
+                        pcall(function() fireclickdetector(clickDetector) end)
+                        notify("Auto Admin", "All pads claimed, regenerating...", 3)
+                        task.wait(1)
                     end
                 end
             end
@@ -1683,17 +1701,60 @@ local function claimAllAdminPads()
     if not initAdminPads() then return end
     local hrp = getHRP()
     if not hrp then return end
-    local claimed = 0
+
+    -- Find unclaimed pads (Dark green)
+    local unclaimedPads = {}
+    local ourPads = 0
     for _, pad in ipairs(adminPads) do
         local head = pad:FindFirstChild("Head")
-        if head and head:IsA("BasePart") and not padIsOurs(pad) then
+        if head and head:IsA("BasePart") then
+            if padIsOurs(pad) then
+                ourPads = ourPads + 1
+            elseif head.BrickColor == BrickColor.new("Dark green") then
+                table.insert(unclaimedPads, pad)
+            end
+        end
+    end
+
+    -- If no unclaimed pads and we don't own any, regen
+    if #unclaimedPads == 0 and ourPads == 0 then
+        if clickDetector then
+            clickDetector.MaxActivationDistance = 99999
+            pcall(function() fireclickdetector(clickDetector) end)
+            notify("Claim All", "All pads claimed, regenerating...", 3)
+            task.wait(1)
+            -- Re-scan for unclaimed pads after regen
+            for _, pad in ipairs(adminPads) do
+                local head = pad:FindFirstChild("Head")
+                if head and head:IsA("BasePart") and not padIsOurs(pad) and head.BrickColor == BrickColor.new("Dark green") then
+                    table.insert(unclaimedPads, pad)
+                end
+            end
+        else
+            notify("Claim All", "No unclaimed pads and no regen detector", 3)
+            return
+        end
+    end
+
+    if #unclaimedPads == 0 then
+        notify("Claim All", "No unclaimed pads found", 3)
+        return
+    end
+
+    local claimed = 0
+    for _, pad in ipairs(unclaimedPads) do
+        local head = pad:FindFirstChild("Head")
+        if head and head:IsA("BasePart") then
             local origCF = head.CFrame
+            local origCanCollide = head.CanCollide
+            -- Turn OFF collisions while claiming
+            head.CanCollide = false
             local running = true
             task.spawn(function()
                 while running do
-                    -- Set head CFrame to HRP on CLIENT (no F3X needed)
+                    -- Set head CFrame to HRP on CLIENT
                     head.CFrame = hrp.CFrame
-                    -- Fire touch interest while head is at HRP position
+                    -- Fire touch interest
                     pcall(function()
                         firetouchinterest(head, hrp, 0)
                         firetouchinterest(head, hrp, 1)
@@ -1705,8 +1766,6 @@ local function claimAllAdminPads()
             while elapsed < 3 do
                 if padIsOurs(pad) then
                     running = false
-                    -- Reset head CFrame to original on client
-                    head.CFrame = origCF
                     claimed = claimed + 1
                     break
                 end
@@ -1714,8 +1773,9 @@ local function claimAllAdminPads()
                 elapsed = elapsed + 0.02
             end
             running = false
-            -- Always reset head CFrame to original on client
+            -- Reset head to original position and turn collisions back ON
             head.CFrame = origCF
+            head.CanCollide = origCanCollide
         end
     end
     notify("Claim All", "Claimed " .. claimed .. " pads")
@@ -2212,7 +2272,7 @@ Handler:AddCommand("prefix", {Args = {"*Prefix*"}, Aliases = {}, Description = "
 end)
 
 Handler:AddCommand("commands", {Args = {}, Aliases = {"cmds", "help", "scmds"}, Description = "Show commands"}, function()
-    print("=== Commands (v146) ===")
+    print("=== Commands (v147) ===")
     print("Prefix: . (normal) .. (silent) | Targets: all, others, me, random, friends, nonfriends")
     print("KICKS: .sks [count] .skick/.sk/.kick .pks [count] .pkick/.pk/.crash2 .crash/.ck .dualkick/.dk .ss")
     print("BAN: .ban .unban .serverlock .unserverlock")
@@ -2330,7 +2390,7 @@ local function uiStat(parent, props)
 end
 
 -- ===== UI =====
-window = Rayfield:CreateWindow({Name = gameName, Subtitle = "Kohl's Admin House X v146"})
+window = Rayfield:CreateWindow({Name = gameName, Subtitle = "Kohl's Admin House X v147"})
 if not window then return end
 
 -- ===================== MAIN TAB =====================
@@ -2918,7 +2978,6 @@ pcall(function()
 end)
 
 -- ===== STARTUP =====
--- Say startergive self ONCE (resets after 10s for re-request if lost)
 ensureF3X()
 
 task.spawn(function()
@@ -2938,5 +2997,5 @@ task.spawn(function()
     startAntiGearban()
 end)
 
-notify("Welcome", LocalPlayer.DisplayName .. " — v146!", 5)
-print("[Kohl's Admin House X] Loaded v146!")
+notify("Welcome", LocalPlayer.DisplayName .. " — v147!", 5)
+print("[Kohl's Admin House X] Loaded v147!")
