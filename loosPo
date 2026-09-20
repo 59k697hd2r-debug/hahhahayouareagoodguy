@@ -1,9 +1,9 @@
--- ===== Kohl's Admin House X Script (v148) =====
-if _G.KAHX_VERSION and _G.KAHX_VERSION >= 148 then
+-- ===== Kohl's Admin House X Script (v149) =====
+if _G.KAHX_VERSION and _G.KAHX_VERSION >= 149 then
     if script then script:Destroy() end
     return
 end
-_G.KAHX_VERSION = 148
+_G.KAHX_VERSION = 149
 
 local commandPrefix = "."
 local silentPrefix = ".."
@@ -100,7 +100,7 @@ local stats = {
     playersKicked = 0, playersGearbanned = 0, playersPortaUsed = 0, playersJailed = 0,
     playersProtected = 0, playersSkicked = 0, playersPkicked = 0
 }
-local ICONS = {main = 1436097318, antis = 1436097318, clear = 1436097318, binds = 1436097318, stats = 1436097318, info = 1436097318, settings = 1436097318}
+local ICONS = {main = 1436097318, antis = 1436097318, clear = 1436097318, binds = 1436097318, stats = 1436097318, info = 1436097318, settings = 1436097318, changelog = 1436097318}
 
 local Variables = {
     SKickFolder = nil, PKS = nil, AntiKick = false, GearBlacklist = nil, ServerLock = nil,
@@ -110,7 +110,6 @@ local Variables = {
 local WhitelistedSKS = {}
 WhitelistedSKS[LocalPlayer.Name] = true
 
--- No Terrain - only SunRays, Bloom, ColorCorrection
 local function getHiddenParent()
     return workspace:FindFirstChild("Realistic SunRays") or workspace:FindFirstChild("Realistic Bloom") or workspace:FindFirstChild("Realistic ColorCorrection")
 end
@@ -168,51 +167,6 @@ local function getPlayerFromPartial(name)
         if string.find(string.lower(p.Name), name) or string.find(string.lower(p.DisplayName), name) then return p end
     end
     return nil
-end
-
-local function gp(input)
-    if not input or input == "" then return {} end
-    input = string.lower(input)
-    local r = {}
-    if input == "all" then
-        for _, p in ipairs(Players:GetPlayers()) do table.insert(r, p) end
-        return r
-    elseif input == "others" then
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then table.insert(r, p) end
-        end
-        return r
-    elseif input == "me" then
-        return {LocalPlayer}
-    elseif input == "random" then
-        local l = Players:GetPlayers()
-        if #l > 0 then return {l[math.random(1, #l)]} end
-        return {}
-    elseif input == "friends" then
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then
-                local s, f = pcall(function() return p:IsFriendsWith(LocalPlayer.UserId) end)
-                if s and f then table.insert(r, p) end
-            end
-        end
-        return r
-    elseif input == "nonfriends" then
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then
-                local s, f = pcall(function() return p:IsFriendsWith(LocalPlayer.UserId) end)
-                if not (s and f) then table.insert(r, p) end
-            end
-        end
-        return r
-    else
-        for _, p in ipairs(Players:GetPlayers()) do
-            if string.sub(string.lower(p.Name), 1, #input) == input or string.sub(string.lower(p.DisplayName), 1, #input) == input then
-                table.insert(r, p)
-            end
-        end
-        return r
-    end
-    return {}
 end
 
 local function isWhitelisted(player)
@@ -1094,7 +1048,7 @@ LocalPlayer.CharacterAdded:Connect(function()
     end
 end)
 
--- ===== SKATEBOARD KICK (Creates 1, copies count-1 times, NOT in Terrain) =====
+-- ===== SKATEBOARD KICK =====
 Handler:AddCommand("skateboardkicksetup", {Args = {"*Count*"}, Aliases = {"sks"}, Description = "Skateboard kick setup"}, function(Arguments)
     local count = tonumber(Arguments and Arguments[1]) or 1
     local sunraysParent = getHiddenParent()
@@ -1148,7 +1102,6 @@ Handler:AddCommand("skateboardkicksetup", {Args = {"*Count*"}, Aliases = {"sks"}
             repeat task.wait(0.01) until (tempFolder and platform.Parent == tempFolder) or os.clock() > to
             f3x({"Ungroup", {tempFolder}})
         end
-        -- Copy to other hidden parents (NOT Terrain)
         if count > 1 then
             local allParents = {
                 workspace:FindFirstChild("Realistic SunRays"),
@@ -1159,11 +1112,9 @@ Handler:AddCommand("skateboardkicksetup", {Args = {"*Count*"}, Aliases = {"sks"}
             for i = 2, count do
                 local cloneParent = allParents[(copyIndex % 3) + 1]
                 copyIndex = copyIndex + 1
-                -- Skip the parent that already has the main
                 if cloneParent and cloneParent ~= sunraysParent then
                     pcall(function() f3x({"Clone", {Variables.SKickFolder}, cloneParent}) end)
                 elseif cloneParent then
-                    -- If same as main parent, use next available
                     for _, altParent in ipairs(allParents) do
                         if altParent and altParent ~= sunraysParent then
                             pcall(function() f3x({"Clone", {Variables.SKickFolder}, altParent}) end)
@@ -1193,7 +1144,7 @@ Handler:AddCommand("delsks", {Args = {}, Aliases = {"delskateboard"}, Descriptio
     end
 end)
 
-Handler:AddCommand("skateboardkick", {Args = {"*Player*"}, Aliases = {"skick", "sk", "kick"}, Description = "Skateboard kick (supports: all, others, me, random, friends, nonfriends)"}, function(Arguments)
+Handler:AddCommand("skateboardkick", {Args = {"*Player*"}, Aliases = {"skick", "sk", "kick"}, Description = "Skateboard kick"}, function(Arguments)
     if not Arguments[1] or Arguments[1] == "" then return end
     if not Variables.SKickFolder or not Variables.SKickFolder.Parent or not Variables.SKickFolder:FindFirstChildOfClass("SkateboardPlatform") then
         notify("Auto-Setup", "Setting up Skateboard Kick...", 3)
@@ -1241,7 +1192,7 @@ Handler:AddCommand("skateboardkick", {Args = {"*Player*"}, Aliases = {"skick", "
     end, false)
 end)
 
--- ===== POTATO KICK (NOT in Terrain) =====
+-- ===== POTATO KICK =====
 Handler:AddCommand("potatokicksetup", {Args = {"*Count*"}, Aliases = {"pks", "crash2setup"}, Description = "Potato kick setup"}, function(Arguments)
     local count = tonumber(Arguments and Arguments[1]) or 1
     if Variables.PKS and Variables.PKS.Parent then return true end
@@ -1287,7 +1238,6 @@ Handler:AddCommand("potatokicksetup", {Args = {"*Count*"}, Aliases = {"pks", "cr
     tool.Parent = LocalPlayer.Character
     f3x({"SetParent", {tool}, Variables.PKS})
     f3x({"SetName", {tool}, randomString(math.random(1, 100))})
-    -- Copy to other hidden parents (NOT Terrain)
     if count > 1 then
         local allParents = {
             workspace:FindFirstChild("Realistic SunRays"),
@@ -1315,7 +1265,7 @@ Handler:AddCommand("potatokicksetup", {Args = {"*Count*"}, Aliases = {"pks", "cr
     return Variables.PKS ~= nil
 end)
 
-Handler:AddCommand("potatokick", {Args = {"*Player*"}, Aliases = {"pkick", "pk", "crash2"}, Description = "Potato kick (supports: all, others, me, random, friends, nonfriends)"}, function(Arguments)
+Handler:AddCommand("potatokick", {Args = {"*Player*"}, Aliases = {"pkick", "pk", "crash2"}, Description = "Potato kick"}, function(Arguments)
     if not Arguments[1] or Arguments[1] == "" then return end
     if not Variables.PKS or not Variables.PKS.Parent then
         notify("Auto-Setup", "Setting up Potato Kick...", 3)
@@ -1497,7 +1447,7 @@ local function unbanPlayer(input)
     return false
 end
 
--- ===== LOOP KILL (with allfuture support) =====
+-- ===== LOOP KILL =====
 local function stopLoopKillForPlayer(p)
     if not p then return end
     local k = tostring(p.UserId)
@@ -1634,7 +1584,7 @@ local function porta(targetName)
     end
 end
 
--- ===== ADMIN PADS =====
+-- ===== ADMIN PADS (ONLY claims 1 pad, not all) =====
 local adminPads = {}
 local clickDetector = nil
 
@@ -1668,23 +1618,25 @@ local function startAutoAdmin()
         while monitorLoopActive do
             local hrp = getHRP()
             if hrp then
-                local targetPads = {}
-                local allClaimed = true
+                -- Count our pads and find unclaimed
                 local ourPads = 0
+                local unclaimedPads = {}
+                local allClaimed = true
                 for _, pad in ipairs(adminPads) do
                     local head = pad:FindFirstChild("Head")
                     if head and head:IsA("BasePart") then
                         if padIsOurs(pad) then
                             ourPads = ourPads + 1
                         elseif head.BrickColor == BrickColor.new("Dark green") then
-                            table.insert(targetPads, pad)
+                            table.insert(unclaimedPads, pad)
                             allClaimed = false
                         end
                     end
                 end
 
-                if #targetPads > 0 then
-                    local pad = targetPads[math.random(1, #targetPads)]
+                -- ONLY claim if we have 0 pads (don't claim all)
+                if ourPads == 0 and #unclaimedPads > 0 then
+                    local pad = unclaimedPads[math.random(1, #unclaimedPads)]
                     local head = pad:FindFirstChild("Head")
                     if head and head:IsA("BasePart") then
                         local origCF = head.CFrame
@@ -1708,6 +1660,7 @@ local function startAutoAdmin()
                         head.CanCollide = origCanCollide
                     end
                 elseif allClaimed and ourPads == 0 then
+                    -- All pads claimed but we don't own any → regen
                     if clickDetector then
                         clickDetector.MaxActivationDistance = 99999
                         pcall(function() fireclickdetector(clickDetector) end)
@@ -1716,7 +1669,7 @@ local function startAutoAdmin()
                     end
                 end
             end
-            task.wait(0.02)
+            task.wait(0.05)
         end
         autoAdminThread = nil
     end)
@@ -2023,7 +1976,7 @@ Handler:AddCommand("stopmusic", {Args = {}, Aliases = {}, Description = "Stop mu
 end)
 
 -- ===== STANDARD COMMANDS =====
-Handler:AddCommand("crash", {Args = {"*Player*"}, Aliases = {"ck"}, Description = "Crash (supports: all, others, me, random, friends, nonfriends)"}, function(Args)
+Handler:AddCommand("crash", {Args = {"*Player*"}, Aliases = {"ck"}, Description = "Crash"}, function(Args)
     if not Args[1] or Args[1] == "" then return end
     resolveAllWithFriends(Args[1], function(players)
         for i, p in ipairs(players) do
@@ -2033,7 +1986,7 @@ Handler:AddCommand("crash", {Args = {"*Player*"}, Aliases = {"ck"}, Description 
     end, true)
 end)
 
-Handler:AddCommand("loopkill", {Args = {"*Player*"}, Aliases = {"lk"}, Description = "Loop kill (all, allfuture, friends, nonfriends, name)"}, function(Args)
+Handler:AddCommand("loopkill", {Args = {"*Player*"}, Aliases = {"lk"}, Description = "Loop kill (all, allfuture, friends, nonfriends)"}, function(Args)
     if not Args[1] or Args[1] == "" then return end
     local lowerInput = string.lower(Args[1])
     if lowerInput == "all" or lowerInput == "allfuture" then
@@ -2289,7 +2242,6 @@ Handler:AddCommand("goto", {Args = {"*Player*"}, Aliases = {"to"}, Description =
     resolveAllWithFriends(Args[1], function(players) for _, p in ipairs(players) do chatSystem("to " .. p.Name) end end, false)
 end)
 
--- Prefix: multiple characters allowed
 Handler:AddCommand("prefix", {Args = {"*Prefix*"}, Aliases = {}, Description = "Change prefix (any length)"}, function(Args)
     if Args[1] and #Args[1] >= 1 then
         commandPrefix = Args[1]
@@ -2298,7 +2250,7 @@ Handler:AddCommand("prefix", {Args = {"*Prefix*"}, Aliases = {}, Description = "
 end)
 
 Handler:AddCommand("commands", {Args = {}, Aliases = {"cmds", "help", "scmds"}, Description = "Show commands"}, function()
-    print("=== Commands (v148) ===")
+    print("=== Commands (v149) ===")
     print("Prefix: " .. commandPrefix .. " (any length) | Silent: " .. silentPrefix .. " | Targets: all, others, me, random, friends, nonfriends, allfuture (loopkill only)")
     print("KICKS: .sks [count] .skick/.sk/.kick <target> .pks [count] .pkick/.pk/.crash2 <target> .crash/.ck <target> .dualkick/.dk <target> .ss")
     print("BAN: .ban <target> .unban .serverlock .unserverlock")
@@ -2417,7 +2369,7 @@ local function uiStat(parent, props)
 end
 
 -- ===== UI =====
-window = Rayfield:CreateWindow({Name = gameName, Subtitle = "Kohl's Admin House X v148"})
+window = Rayfield:CreateWindow({Name = gameName, Subtitle = "Kohl's Admin House X v149"})
 if not window then return end
 
 -- ===================== MAIN TAB =====================
@@ -2622,7 +2574,7 @@ uiButton(adminGroup, {Name = "Regen Pads", Callback = function()
         notify("Regen", "Done", 3)
     end
 end})
-uiToggle(adminGroup, {Name = "Auto Admin", Value = true, Callback = function(v)
+uiToggle(adminGroup, {Name = "Auto Admin (claims 1 pad only)", Value = true, Callback = function(v)
     if v then startAutoAdmin() else stopAutoAdmin() end
 end})
 uiButton(adminGroup, {Name = "Claim All Pads", Callback = function() claimAllAdminPads() end})
@@ -2941,6 +2893,39 @@ uiButton(settingsTab, {Name = "Friend Join: Disabled", Callback = function()
     notify("Friend Join", "Disabled", 3)
 end})
 
+-- ===================== CHANGELOG TAB =====================
+local changelogTab = window:CreateTab({Name = "Changelog", Icon = ICONS.changelog})
+
+uiDivider(changelogTab, "v149")
+uiText(changelogTab, {Name = "v149 Changes", Text = "• Auto admin: ONLY claims 1 pad (not all)\n  - Only claims if we have 0 pads\n  - Stops after 1 successful claim\n  - Regen if all claimed but we have 0\n• Changelog tab added"})
+
+uiDivider(changelogTab, "v148")
+uiText(changelogTab, {Name = "v148 Changes", Text = "• Auto admin: CanCollide off, selects unclaimed only\n• Targets: friends, nonfriends for all kicks\n• LoopKill: allfuture for future players\n• SKS/PKS: NOT in Terrain (SunRays/Bloom/CC only)\n• Prefix: multiple characters allowed\n• SKS: creates 1 main + copies (count-1)"})
+
+uiDivider(changelogTab, "v147")
+uiText(changelogTab, {Name = "v147 Changes", Text = "• Auto admin: Client-side CFrame (no F3X needed)\n• Owner StringValue for claim detection\n• Regen if all pads claimed\n• Selects unclaimed pads (Dark green BrickColor)"})
+
+uiDivider(changelogTab, "v146")
+uiText(changelogTab, {Name = "v146 Changes", Text = "• Client-side CFrame for auto admin\n• No hookmetamethod (F3X untouched)\n• TextChatService only for chat commands"})
+
+uiDivider(changelogTab, "v145")
+uiText(changelogTab, {Name = "v145 Changes", Text = "• startergive self with 10s reset timer\n• ensureF3X called from all F3X functions\n• Cached endpoint (getSyncAPI)\n• No typeof() issues"})
+
+uiDivider(changelogTab, "v144")
+uiText(changelogTab, {Name = "v144 Changes", Text = "• startergive self ONCE (f3xRequested flag)\n• Auto admin: SyncMove + touch simultaneous\n• No hookmetamethod"})
+
+uiDivider(changelogTab, "v143")
+uiText(changelogTab, {Name = "v143 Changes", Text = "• Cached endpoint (fast)\n• SKS/PKS count support (.sks 5)\n• SKS: gear me ID + name\n• Auto admin: task.wait(0.02) (fast)\n• EnsureF3X from all F3X functions"})
+
+uiDivider(changelogTab, "v142")
+uiText(changelogTab, {Name = "v142 Changes", Text = "• hookmetamethod completely removed\n• TextChatService only for chat commands\n• F3X completely untouched (no yield issues)"})
+
+uiDivider(changelogTab, "v139-141")
+uiText(changelogTab, {Name = "v139-141 Changes", Text = "• ESP, Fly, Noclip, Click TP, Inf Jump, Fullbright added (v139)\n• Removed ESP/Fly/Noclip/etc (v142)\n• Fixed ~= syntax errors\n• Fixed typeof() syntax error\n• Fixed getinfo typo (hrpPosition.Z)"})
+
+uiDivider(changelogTab, "v134-138")
+uiText(changelogTab, {Name = "v134-138 Changes", Text = "• Rayfield Gen2 UI (CreateText, CreateDivider, CreateStat)\n• Antis tab, Chat Binds tab\n• Anti for others (detection-based)\n• Hot Potato crash (replaces sword crash)\n• ServerLock whitelist by name\n• Undeletable builds (DescendantAdded)\n• Follow Platform (Terrain parent, 0.01s)"})
+
 -- ===== STATS LOOP =====
 task.spawn(function()
     while monitorLoopActive do
@@ -3025,5 +3010,5 @@ task.spawn(function()
     startAntiGearban()
 end)
 
-notify("Welcome", LocalPlayer.DisplayName .. " — v148!", 5)
-print("[Kohl's Admin House X] Loaded v148!")
+notify("Welcome", LocalPlayer.DisplayName .. " — v149!", 5)
+print("[Kohl's Admin House X] Loaded v149!")
