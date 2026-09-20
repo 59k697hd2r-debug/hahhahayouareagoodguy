@@ -1,4 +1,4 @@
--- ===== Kohl's Admin House X Script (v144) =====
+    -- ===== Kohl's Admin House X Script (v144) =====
 if _G.KAHX_VERSION and _G.KAHX_VERSION >= 144 then
     if script then script:Destroy() end
     return
