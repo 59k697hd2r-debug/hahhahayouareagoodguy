@@ -1,14 +1,16 @@
--- ===== Kohl's Admin House X Script (v147) =====
-if _G.KAHX_VERSION and _G.KAHX_VERSION >= 147 then
+-- ===== Kohl's Admin House X Script (v148) =====
+if _G.KAHX_VERSION and _G.KAHX_VERSION >= 148 then
     if script then script:Destroy() end
     return
 end
-_G.KAHX_VERSION = 147
+_G.KAHX_VERSION = 148
 
 local commandPrefix = "."
 local silentPrefix = ".."
 local BlacklistedGear = {"BanHammer", "Tool"}
 local WhitelistedPlayers = {}
+local loopkillFuture = false
+local loopkillFutureConn = nil
 
 local ALLOWED_PLACE_IDS = {14747334292}
 local isAllowed = false
@@ -108,8 +110,9 @@ local Variables = {
 local WhitelistedSKS = {}
 WhitelistedSKS[LocalPlayer.Name] = true
 
+-- No Terrain - only SunRays, Bloom, ColorCorrection
 local function getHiddenParent()
-    return workspace:FindFirstChild("Realistic SunRays") or workspace:FindFirstChild("Realistic Bloom") or Workspace.Terrain
+    return workspace:FindFirstChild("Realistic SunRays") or workspace:FindFirstChild("Realistic Bloom") or workspace:FindFirstChild("Realistic ColorCorrection")
 end
 
 -- ===== UTILITY =====
@@ -1091,10 +1094,14 @@ LocalPlayer.CharacterAdded:Connect(function()
     end
 end)
 
--- ===== SKATEBOARD KICK =====
+-- ===== SKATEBOARD KICK (Creates 1, copies count-1 times, NOT in Terrain) =====
 Handler:AddCommand("skateboardkicksetup", {Args = {"*Count*"}, Aliases = {"sks"}, Description = "Skateboard kick setup"}, function(Arguments)
     local count = tonumber(Arguments and Arguments[1]) or 1
-    local sunraysParent = workspace:FindFirstChild("Realistic SunRays") or getHiddenParent()
+    local sunraysParent = getHiddenParent()
+    if not sunraysParent then
+        notify("Error", "No hidden parent found (SunRays/Bloom/ColorCorrection)", 3)
+        return false
+    end
     if Variables.SKickFolder and Variables.SKickFolder.Parent and Variables.SKickFolder:FindFirstChildOfClass("SkateboardPlatform") then
         return true
     end
@@ -1141,27 +1148,31 @@ Handler:AddCommand("skateboardkicksetup", {Args = {"*Count*"}, Aliases = {"sks"}
             repeat task.wait(0.01) until (tempFolder and platform.Parent == tempFolder) or os.clock() > to
             f3x({"Ungroup", {tempFolder}})
         end
+        -- Copy to other hidden parents (NOT Terrain)
         if count > 1 then
-            local cloneParents = {
+            local allParents = {
+                workspace:FindFirstChild("Realistic SunRays"),
                 workspace:FindFirstChild("Realistic Bloom"),
                 workspace:FindFirstChild("Realistic ColorCorrection"),
-                Workspace.Terrain,
-                Workspace.Terrain,
-                Workspace.Terrain,
-                Workspace.Terrain,
-                Workspace.Terrain,
-                Workspace.Terrain,
-                Workspace.Terrain,
-                Workspace.Terrain,
             }
+            local copyIndex = 0
             for i = 2, count do
-                local cloneParent = cloneParents[i - 1]
-                if not cloneParent then cloneParent = Workspace.Terrain end
+                local cloneParent = allParents[(copyIndex % 3) + 1]
+                copyIndex = copyIndex + 1
+                -- Skip the parent that already has the main
                 if cloneParent and cloneParent ~= sunraysParent then
                     pcall(function() f3x({"Clone", {Variables.SKickFolder}, cloneParent}) end)
+                elseif cloneParent then
+                    -- If same as main parent, use next available
+                    for _, altParent in ipairs(allParents) do
+                        if altParent and altParent ~= sunraysParent then
+                            pcall(function() f3x({"Clone", {Variables.SKickFolder}, altParent}) end)
+                            break
+                        end
+                    end
                 end
             end
-            notify("SKS", "Created " .. count .. " setups", 3)
+            notify("SKS", "Created 1 main + " .. (count - 1) .. " copies = " .. count .. " total", 3)
         end
     end
     f3x({"Remove", {model}})
@@ -1182,7 +1193,7 @@ Handler:AddCommand("delsks", {Args = {}, Aliases = {"delskateboard"}, Descriptio
     end
 end)
 
-Handler:AddCommand("skateboardkick", {Args = {"*Player*"}, Aliases = {"skick", "sk", "kick"}, Description = "Skateboard kick"}, function(Arguments)
+Handler:AddCommand("skateboardkick", {Args = {"*Player*"}, Aliases = {"skick", "sk", "kick"}, Description = "Skateboard kick (supports: all, others, me, random, friends, nonfriends)"}, function(Arguments)
     if not Arguments[1] or Arguments[1] == "" then return end
     if not Variables.SKickFolder or not Variables.SKickFolder.Parent or not Variables.SKickFolder:FindFirstChildOfClass("SkateboardPlatform") then
         notify("Auto-Setup", "Setting up Skateboard Kick...", 3)
@@ -1230,12 +1241,17 @@ Handler:AddCommand("skateboardkick", {Args = {"*Player*"}, Aliases = {"skick", "
     end, false)
 end)
 
--- ===== POTATO KICK =====
+-- ===== POTATO KICK (NOT in Terrain) =====
 Handler:AddCommand("potatokicksetup", {Args = {"*Count*"}, Aliases = {"pks", "crash2setup"}, Description = "Potato kick setup"}, function(Arguments)
     local count = tonumber(Arguments and Arguments[1]) or 1
     if Variables.PKS and Variables.PKS.Parent then return true end
     pksSetupInProgress = true
     local hiddenParent = getHiddenParent()
+    if not hiddenParent then
+        pksSetupInProgress = false
+        notify("Error", "No hidden parent found (SunRays/Bloom/ColorCorrection)", 3)
+        return false
+    end
     local tempPart = f3x({"CreatePart", "Normal", CFrame.new(0, 0, 0), hiddenParent})
     if not tempPart then
         pksSetupInProgress = false
@@ -1271,33 +1287,35 @@ Handler:AddCommand("potatokicksetup", {Args = {"*Count*"}, Aliases = {"pks", "cr
     tool.Parent = LocalPlayer.Character
     f3x({"SetParent", {tool}, Variables.PKS})
     f3x({"SetName", {tool}, randomString(math.random(1, 100))})
+    -- Copy to other hidden parents (NOT Terrain)
     if count > 1 then
-        local cloneParents = {
+        local allParents = {
+            workspace:FindFirstChild("Realistic SunRays"),
             workspace:FindFirstChild("Realistic Bloom"),
             workspace:FindFirstChild("Realistic ColorCorrection"),
-            Workspace.Terrain,
-            Workspace.Terrain,
-            Workspace.Terrain,
-            Workspace.Terrain,
-            Workspace.Terrain,
-            Workspace.Terrain,
-            Workspace.Terrain,
-            Workspace.Terrain,
         }
+        local copyIndex = 0
         for i = 2, count do
-            local cloneParent = cloneParents[i - 1]
-            if not cloneParent then cloneParent = Workspace.Terrain end
+            local cloneParent = allParents[(copyIndex % 3) + 1]
+            copyIndex = copyIndex + 1
             if cloneParent and cloneParent ~= hiddenParent then
                 pcall(function() f3x({"Clone", {Variables.PKS}, cloneParent}) end)
+            elseif cloneParent then
+                for _, altParent in ipairs(allParents) do
+                    if altParent and altParent ~= hiddenParent then
+                        pcall(function() f3x({"Clone", {Variables.PKS}, altParent}) end)
+                        break
+                    end
+                end
             end
         end
-        notify("PKS", "Created " .. count .. " setups", 3)
+        notify("PKS", "Created 1 main + " .. (count - 1) .. " copies = " .. count .. " total", 3)
     end
     pksSetupInProgress = false
     return Variables.PKS ~= nil
 end)
 
-Handler:AddCommand("potatokick", {Args = {"*Player*"}, Aliases = {"pkick", "pk", "crash2"}, Description = "Potato kick"}, function(Arguments)
+Handler:AddCommand("potatokick", {Args = {"*Player*"}, Aliases = {"pkick", "pk", "crash2"}, Description = "Potato kick (supports: all, others, me, random, friends, nonfriends)"}, function(Arguments)
     if not Arguments[1] or Arguments[1] == "" then return end
     if not Variables.PKS or not Variables.PKS.Parent then
         notify("Auto-Setup", "Setting up Potato Kick...", 3)
@@ -1479,7 +1497,7 @@ local function unbanPlayer(input)
     return false
 end
 
--- ===== LOOP KILL =====
+-- ===== LOOP KILL (with allfuture support) =====
 local function stopLoopKillForPlayer(p)
     if not p then return end
     local k = tostring(p.UserId)
@@ -1508,10 +1526,15 @@ end
 
 local function stopLoopKill(input)
     if not input or input == "" then return end
-    if string.lower(input) == "all" then
+    if string.lower(input) == "all" or string.lower(input) == "allfuture" then
         for k, t in pairs(loopkillTasks) do
             if t then task.cancel(t) end
             loopkillTasks[k] = nil
+        end
+        loopkillFuture = false
+        if loopkillFutureConn then
+            loopkillFutureConn:Disconnect()
+            loopkillFutureConn = nil
         end
         notify("LoopKill", "Stopped all", 3)
         return
@@ -1522,11 +1545,27 @@ end
 
 local function startLoopKill(input)
     if not input or input == "" then return end
-    if string.lower(input) == "all" then
+    local lowerInput = string.lower(input)
+    if lowerInput == "all" then
         for _, p in ipairs(Players:GetPlayers()) do
             if p ~= LocalPlayer then startLoopKillForPlayer(p) end
         end
-        notify("LoopKill", "Started on all", 3)
+        notify("LoopKill", "Started on all current players", 3)
+        notify("LoopKill", "For future players too, use .loopkill allfuture", 5)
+        return
+    elseif lowerInput == "allfuture" then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then startLoopKillForPlayer(p) end
+        end
+        loopkillFuture = true
+        if loopkillFutureConn then loopkillFutureConn:Disconnect() end
+        loopkillFutureConn = Players.PlayerAdded:Connect(function(p)
+            if loopkillFuture then
+                task.wait(1)
+                startLoopKillForPlayer(p)
+            end
+        end)
+        notify("LoopKill", "Started on all + future players", 3)
         return
     end
     local p = getPlayerFromPartial(input)
@@ -1595,7 +1634,7 @@ local function porta(targetName)
     end
 end
 
--- ===== ADMIN PADS (Client-side CFrame, CanCollide off, regen if all claimed, selects unclaimed only) =====
+-- ===== ADMIN PADS =====
 local adminPads = {}
 local clickDetector = nil
 
@@ -1629,7 +1668,6 @@ local function startAutoAdmin()
         while monitorLoopActive do
             local hrp = getHRP()
             if hrp then
-                -- Find UNCLAIMED pads (Dark green BrickColor) that we don't own
                 local targetPads = {}
                 local allClaimed = true
                 local ourPads = 0
@@ -1646,37 +1684,30 @@ local function startAutoAdmin()
                 end
 
                 if #targetPads > 0 then
-                    -- Pick 1 random unclaimed pad
                     local pad = targetPads[math.random(1, #targetPads)]
                     local head = pad:FindFirstChild("Head")
                     if head and head:IsA("BasePart") then
                         local origCF = head.CFrame
                         local origCanCollide = head.CanCollide
-                        -- Turn OFF collisions while claiming
                         head.CanCollide = false
                         local timeout = os.clock() + 5
                         while monitorLoopActive and os.clock() < timeout do
                             local currentHrp = getHRP()
                             if not currentHrp then break end
-                            -- Set head CFrame to HRP on CLIENT
                             head.CFrame = currentHrp.CFrame
-                            -- Fire touch interest while head is at HRP position
                             pcall(function()
                                 firetouchinterest(head, currentHrp, 0)
                                 firetouchinterest(head, currentHrp, 1)
                             end)
-                            -- Check if we claimed it via Owner StringValue
                             if padIsOurs(pad) then
                                 break
                             end
                             task.wait()
                         end
-                        -- Reset head to original position and turn collisions back ON
                         head.CFrame = origCF
                         head.CanCollide = origCanCollide
                     end
                 elseif allClaimed and ourPads == 0 then
-                    -- All pads claimed but we don't own any → regen pads
                     if clickDetector then
                         clickDetector.MaxActivationDistance = 99999
                         pcall(function() fireclickdetector(clickDetector) end)
@@ -1685,7 +1716,7 @@ local function startAutoAdmin()
                     end
                 end
             end
-            task.wait(0.05)
+            task.wait(0.02)
         end
         autoAdminThread = nil
     end)
@@ -1702,7 +1733,6 @@ local function claimAllAdminPads()
     local hrp = getHRP()
     if not hrp then return end
 
-    -- Find unclaimed pads (Dark green)
     local unclaimedPads = {}
     local ourPads = 0
     for _, pad in ipairs(adminPads) do
@@ -1716,14 +1746,12 @@ local function claimAllAdminPads()
         end
     end
 
-    -- If no unclaimed pads and we don't own any, regen
     if #unclaimedPads == 0 and ourPads == 0 then
         if clickDetector then
             clickDetector.MaxActivationDistance = 99999
             pcall(function() fireclickdetector(clickDetector) end)
             notify("Claim All", "All pads claimed, regenerating...", 3)
             task.wait(1)
-            -- Re-scan for unclaimed pads after regen
             for _, pad in ipairs(adminPads) do
                 local head = pad:FindFirstChild("Head")
                 if head and head:IsA("BasePart") and not padIsOurs(pad) and head.BrickColor == BrickColor.new("Dark green") then
@@ -1747,14 +1775,11 @@ local function claimAllAdminPads()
         if head and head:IsA("BasePart") then
             local origCF = head.CFrame
             local origCanCollide = head.CanCollide
-            -- Turn OFF collisions while claiming
             head.CanCollide = false
             local running = true
             task.spawn(function()
                 while running do
-                    -- Set head CFrame to HRP on CLIENT
                     head.CFrame = hrp.CFrame
-                    -- Fire touch interest
                     pcall(function()
                         firetouchinterest(head, hrp, 0)
                         firetouchinterest(head, hrp, 1)
@@ -1773,7 +1798,6 @@ local function claimAllAdminPads()
                 elapsed = elapsed + 0.02
             end
             running = false
-            -- Reset head to original position and turn collisions back ON
             head.CFrame = origCF
             head.CanCollide = origCanCollide
         end
@@ -1999,7 +2023,7 @@ Handler:AddCommand("stopmusic", {Args = {}, Aliases = {}, Description = "Stop mu
 end)
 
 -- ===== STANDARD COMMANDS =====
-Handler:AddCommand("crash", {Args = {"*Player*"}, Aliases = {"ck"}, Description = "Crash (Hot Potato)"}, function(Args)
+Handler:AddCommand("crash", {Args = {"*Player*"}, Aliases = {"ck"}, Description = "Crash (supports: all, others, me, random, friends, nonfriends)"}, function(Args)
     if not Args[1] or Args[1] == "" then return end
     resolveAllWithFriends(Args[1], function(players)
         for i, p in ipairs(players) do
@@ -2009,10 +2033,11 @@ Handler:AddCommand("crash", {Args = {"*Player*"}, Aliases = {"ck"}, Description 
     end, true)
 end)
 
-Handler:AddCommand("loopkill", {Args = {"*Player*"}, Aliases = {"lk"}, Description = "Loop kill"}, function(Args)
+Handler:AddCommand("loopkill", {Args = {"*Player*"}, Aliases = {"lk"}, Description = "Loop kill (all, allfuture, friends, nonfriends, name)"}, function(Args)
     if not Args[1] or Args[1] == "" then return end
-    if string.lower(Args[1]) == "all" then
-        startLoopKill("all")
+    local lowerInput = string.lower(Args[1])
+    if lowerInput == "all" or lowerInput == "allfuture" then
+        startLoopKill(Args[1])
     else
         resolveAllWithFriends(Args[1], function(players)
             for _, p in ipairs(players) do startLoopKillForPlayer(p) end
@@ -2264,22 +2289,24 @@ Handler:AddCommand("goto", {Args = {"*Player*"}, Aliases = {"to"}, Description =
     resolveAllWithFriends(Args[1], function(players) for _, p in ipairs(players) do chatSystem("to " .. p.Name) end end, false)
 end)
 
-Handler:AddCommand("prefix", {Args = {"*Prefix*"}, Aliases = {}, Description = "Change prefix"}, function(Args)
-    if Args[1] and #Args[1] == 1 then
+-- Prefix: multiple characters allowed
+Handler:AddCommand("prefix", {Args = {"*Prefix*"}, Aliases = {}, Description = "Change prefix (any length)"}, function(Args)
+    if Args[1] and #Args[1] >= 1 then
         commandPrefix = Args[1]
         notify("Prefix", "Changed to " .. commandPrefix, 3)
     end
 end)
 
 Handler:AddCommand("commands", {Args = {}, Aliases = {"cmds", "help", "scmds"}, Description = "Show commands"}, function()
-    print("=== Commands (v147) ===")
-    print("Prefix: . (normal) .. (silent) | Targets: all, others, me, random, friends, nonfriends")
-    print("KICKS: .sks [count] .skick/.sk/.kick .pks [count] .pkick/.pk/.crash2 .crash/.ck .dualkick/.dk .ss")
-    print("BAN: .ban .unban .serverlock .unserverlock")
+    print("=== Commands (v148) ===")
+    print("Prefix: " .. commandPrefix .. " (any length) | Silent: " .. silentPrefix .. " | Targets: all, others, me, random, friends, nonfriends, allfuture (loopkill only)")
+    print("KICKS: .sks [count] .skick/.sk/.kick <target> .pks [count] .pkick/.pk/.crash2 <target> .crash/.ck <target> .dualkick/.dk <target> .ss")
+    print("BAN: .ban <target> .unban .serverlock .unserverlock")
+    print("LOOPKILL: .loopkill all | .loopkill allfuture | .loopkill friends | .loopkill nonfriends | .unloopkill all")
     print("CLEAR: .clr .clrall .clrall2 .clrmodels .clrsounds .clrsmoke .clrfire .clrsparkles .clrdecals .clrtextures .clremitters .clrlights .clrwelds .clrconstraints .clrattachments .clrselectionboxes .clrhighlights .clrmeshes .clrbeams .clrtrails .clrfolders .clreffects .clrtext .clrbillboards .clrnpc .clrws .clruig .clrbodies .adminclr .delmesh .trollclr .unanc .nocol")
     print("ANTI (self): .antikick .whitesks .antipunish .antideath .antijail .antiblind .antiall .gearblacklist")
     print("ANTI (others): .antipunish <name> .antideath <name> .antijail <name> .antiblind <name> .antiall <name>")
-    print("PLAYER: .loopkill .unloopkill .gearban .ungearban .porta .freeze .thaw .blind .size .speed .reset .afk .unafk .sit .stand")
+    print("PLAYER: .gearban .ungearban .porta .freeze .thaw .blind .size .speed .reset .afk .unafk .sit .stand")
     print("GAME: .gotohouse .gotoobby .gotobase .boombox .gear .respawnall .gotoall .time .music .stopmusic")
     print("INFO: .getinfo .commands .prefix .bring .goto .massungear .rejoin .hop .admin .unadmin .claimall")
     notify("Commands", "Check console (F9)", 3)
@@ -2390,14 +2417,14 @@ local function uiStat(parent, props)
 end
 
 -- ===== UI =====
-window = Rayfield:CreateWindow({Name = gameName, Subtitle = "Kohl's Admin House X v147"})
+window = Rayfield:CreateWindow({Name = gameName, Subtitle = "Kohl's Admin House X v148"})
 if not window then return end
 
 -- ===================== MAIN TAB =====================
 local mainTab = window:CreateTab({Name = "Main", Icon = ICONS.main})
 
 uiDivider(mainTab, "Kicks")
-uiInput(mainTab, {Name = "Crash Player (Hot Potato)", Placeholder = "Player name, random, or all", ClearTextOnFocus = false, Callback = function(text)
+uiInput(mainTab, {Name = "Crash Player (Hot Potato)", Placeholder = "Player name, all, friends, nonfriends", ClearTextOnFocus = false, Callback = function(text)
     if text and text ~= "" then
         resolveAllWithFriends(text, function(players)
             for i, p in ipairs(players) do
@@ -2408,21 +2435,21 @@ uiInput(mainTab, {Name = "Crash Player (Hot Potato)", Placeholder = "Player name
     end
 end})
 
-uiInput(mainTab, {Name = "Skateboard Kick", Placeholder = "Player name or partial", ClearTextOnFocus = false, Callback = function(text)
+uiInput(mainTab, {Name = "Skateboard Kick", Placeholder = "Player name, friends, nonfriends", ClearTextOnFocus = false, Callback = function(text)
     if text and text ~= "" then
         local cmd = Handler.Commands["skateboardkick"]
         if cmd then task.spawn(function() cmd.callback({text}, text) end) end
     end
 end})
 
-uiInput(mainTab, {Name = "Potato Kick", Placeholder = "Player name or partial", ClearTextOnFocus = false, Callback = function(text)
+uiInput(mainTab, {Name = "Potato Kick", Placeholder = "Player name, friends, nonfriends", ClearTextOnFocus = false, Callback = function(text)
     if text and text ~= "" then
         local cmd = Handler.Commands["potatokick"]
         if cmd then task.spawn(function() cmd.callback({text}, text) end) end
     end
 end})
 
-uiInput(mainTab, {Name = "Dual Kick", Placeholder = "Player name or all", ClearTextOnFocus = false, Callback = function(text)
+uiInput(mainTab, {Name = "Dual Kick", Placeholder = "Player name, all, friends, nonfriends", ClearTextOnFocus = false, Callback = function(text)
     if text and text ~= "" then
         local cmd = Handler.Commands["dualkick"]
         if cmd then task.spawn(function() cmd.callback({text}, text) end) end
@@ -2456,10 +2483,11 @@ uiButton(mainTab, {Name = "Delete Potato Setup", Callback = function()
 end})
 
 uiDivider(mainTab, "Player Management")
-uiInput(mainTab, {Name = "LoopKill", Placeholder = "Player name, all, or random", ClearTextOnFocus = false, Callback = function(text)
+uiInput(mainTab, {Name = "LoopKill", Placeholder = "Name, all, allfuture, friends, nonfriends", ClearTextOnFocus = false, Callback = function(text)
     if text and text ~= "" then
-        if string.lower(text) == "all" then
-            startLoopKill("all")
+        local lowerText = string.lower(text)
+        if lowerText == "all" or lowerText == "allfuture" then
+            startLoopKill(text)
         else
             resolveAllWithFriends(text, function(players)
                 for _, p in ipairs(players) do startLoopKillForPlayer(p) end
@@ -2472,7 +2500,7 @@ uiInput(mainTab, {Name = "Stop LoopKill", Placeholder = "Player name or all", Cl
     if text and text ~= "" then stopLoopKill(text) end
 end})
 
-uiInput(mainTab, {Name = "Ban Player", Placeholder = "Player name", ClearTextOnFocus = false, Callback = function(text)
+uiInput(mainTab, {Name = "Ban Player", Placeholder = "Player name, friends, nonfriends", ClearTextOnFocus = false, Callback = function(text)
     if text and text ~= "" then
         resolveAllWithFriends(text, function(players)
             for i, p in ipairs(players) do
@@ -2487,7 +2515,7 @@ uiInput(mainTab, {Name = "Unban", Placeholder = "Name or User ID", ClearTextOnFo
     if text and text ~= "" then unbanPlayer(text) end
 end})
 
-uiInput(mainTab, {Name = "Gearban", Placeholder = "Player name", ClearTextOnFocus = false, Callback = function(text)
+uiInput(mainTab, {Name = "Gearban", Placeholder = "Player name, friends, nonfriends", ClearTextOnFocus = false, Callback = function(text)
     if text and text ~= "" then
         resolveAllWithFriends(text, function(players)
             for _, p in ipairs(players) do addGearbanTarget(p) end
@@ -2495,7 +2523,7 @@ uiInput(mainTab, {Name = "Gearban", Placeholder = "Player name", ClearTextOnFocu
     end
 end})
 
-uiInput(mainTab, {Name = "Ungearban", Placeholder = "Player name", ClearTextOnFocus = false, Callback = function(text)
+uiInput(mainTab, {Name = "Ungearban", Placeholder = "Player name, friends, nonfriends", ClearTextOnFocus = false, Callback = function(text)
     if text and text ~= "" then
         resolveAllWithFriends(text, function(players)
             for _, p in ipairs(players) do removeGearbanTarget(p) end
@@ -2503,7 +2531,7 @@ uiInput(mainTab, {Name = "Ungearban", Placeholder = "Player name", ClearTextOnFo
     end
 end})
 
-uiInput(mainTab, {Name = "Porta", Placeholder = "Player name", ClearTextOnFocus = false, Callback = function(text)
+uiInput(mainTab, {Name = "Porta", Placeholder = "Player name, friends, nonfriends", ClearTextOnFocus = false, Callback = function(text)
     if text and text ~= "" then
         resolveAllWithFriends(text, function(players)
             for i, p in ipairs(players) do
@@ -2804,7 +2832,7 @@ clrBtn(".delmesh", "delmesh")
 -- ===================== CHAT BINDS TAB =====================
 local bindsTab = window:CreateTab({Name = "Chat Binds", Icon = ICONS.binds})
 uiDivider(bindsTab, "Set Chat Binds")
-uiText(bindsTab, {Name = "Info", Text = "Type a word in each input. When you say .<word> in chat, it triggers that command."})
+uiText(bindsTab, {Name = "Info", Text = "Type a word in each input. When you say " .. commandPrefix .. "<word> in chat, it triggers that command."})
 
 uiDivider(bindsTab, "Kicks & Setups")
 local function uiBindInput(parent, cmdName, displayName)
@@ -2816,7 +2844,7 @@ local function uiBindInput(parent, cmdName, displayName)
             if text and text ~= "" then
                 local lower = string.lower(text)
                 chatBinds[lower] = cmdName
-                notify("Bind Set", displayName .. " -> ." .. text, 3)
+                notify("Bind Set", displayName .. " -> " .. commandPrefix .. text, 3)
             end
         end
     })
@@ -2891,14 +2919,14 @@ uiText(infoTab, {Name = "Account Age", Text = LocalPlayer.AccountAge .. " days"}
 -- ===================== SETTINGS TAB =====================
 local settingsTab = window:CreateTab({Name = "Settings", Icon = ICONS.settings})
 uiDivider(settingsTab, "Chat")
-uiInput(settingsTab, {Name = "Change Prefix", Placeholder = "1 character", ClearTextOnFocus = false, Callback = function(text)
-    if text and #text == 1 then
+uiInput(settingsTab, {Name = "Change Prefix", Placeholder = "Prefix (any length)", ClearTextOnFocus = false, Callback = function(text)
+    if text and #text >= 1 then
         commandPrefix = text
         notify("Prefix", "Changed to " .. commandPrefix, 3)
     end
 end})
 uiToggle(settingsTab, {Name = "Chat Commands", Value = true, Callback = function(v) chatCmdsEnabled = v end})
-uiToggle(settingsTab, {Name = "Silent Commands (.. prefix)", Value = false, Callback = function(v) silentCommands = v end})
+uiToggle(settingsTab, {Name = "Silent Commands (" .. silentPrefix .. " prefix)", Value = false, Callback = function(v) silentCommands = v end})
 uiDivider(settingsTab, "Friend Join Actions")
 uiButton(settingsTab, {Name = "Friend Join: Bring Them", Callback = function()
     friendJoinAction = "bring"
@@ -2997,5 +3025,5 @@ task.spawn(function()
     startAntiGearban()
 end)
 
-notify("Welcome", LocalPlayer.DisplayName .. " — v147!", 5)
-print("[Kohl's Admin House X] Loaded v147!")
+notify("Welcome", LocalPlayer.DisplayName .. " — v148!", 5)
+print("[Kohl's Admin House X] Loaded v148!")
