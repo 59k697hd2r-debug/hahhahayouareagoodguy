@@ -1,10 +1,3 @@
---[[
-    UI Replicator v8.1
-    FIX: Unicode-safe string escaping — all non-ASCII bytes converted to \ddd decimal escapes
-         Guarantees pure ASCII output that any Lua 5.1 / Luau executor can parse
-    SPEED: class-based property caching, time-based yielding, known read-only list
-    PROPS: Expanded property list, All Props toggle, Execute/Preview, multi-path, themes
-]]
 
 local Players          = game:GetService("Players")
 local CoreGui          = game:GetService("CoreGui")
