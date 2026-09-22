@@ -1,0 +1,23 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "type": "luau",
+            "request": "attach",
+            "name": "attach to luau debugger",
+            "address": "localhost",
+            "port": 58000
+        },
+        {
+            "type": "luau",
+            "request": "launch",
+            "name": "launch luau debugger",
+            "program": "${file}",
+            "port": 58000
+        }
+    ]
+}
