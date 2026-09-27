@@ -1,15 +1,8 @@
--- UI Into Code Maker v2
--- Generated: 2026-09-27 14:35:47
--- Source: StarterGui.thinkmonkeythink
-
-local Players = game:GetService("Players")
-local LP = Players.LocalPlayer
-local PlayerGui = LP:WaitForChild("PlayerGui")
 
 local thinkmonkeythink = Instance.new("ScreenGui")
 thinkmonkeythink.Name = "thinkmonkeythink"
 thinkmonkeythink.ResetOnSpawn = false
-thinkmonkeythink.Parent = PlayerGui
+thinkmonkeythink.Parent = game.CoreGui
 
 local topbar = Instance.new("Frame")
 topbar.Name = "topbar"
